@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import Button from '@/components/ui/Button';
-import { FaSync, FaCamera } from 'react-icons/fa';
+import { FaSync, FaCamera, FaRedo, FaKeyboard, FaPaste } from 'react-icons/fa';
 
 interface QrCodeScannerProps {
   onScanSuccess: (result: string) => void;
@@ -15,54 +15,36 @@ export default function QrCodeScanner({ onScanSuccess, onScanError, onClose }: Q
   const [cameras, setCameras] = useState<{id: string, label: string}[]>([]);
   const [currentCamera, setCurrentCamera] = useState<string>('');
   const [isScanning, setIsScanning] = useState(false);
-  const [message, setMessage] = useState<string>('Iniciando câmera...');
+  const [message, setMessage] = useState<string>('Verificando ambiente...');
+  const [hasError, setHasError] = useState(false);
+  const [showManualInput, setShowManualInput] = useState(false);
+  const [manualQrValue, setManualQrValue] = useState('');
+  const [isSecureContext, setIsSecureContext] = useState<boolean | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const scannerContainerRef = useRef<HTMLDivElement>(null);
 
-  // Inicializar o scanner e obter lista de câmeras
+  // Verificar contexto seguro imediatamente quando o componente for montado
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const initScanner = async () => {
-      try {
-        // Criar uma instância do scanner
-        const html5QrCode = new Html5Qrcode("qr-reader");
-        scannerRef.current = html5QrCode;
-
-        // Buscar câmeras disponíveis
-        try {
-          const devices = await Html5Qrcode.getCameras();
-          if (devices && devices.length > 0) {
-            setCameras(devices);
-            // Selecionar a câmera traseira por padrão (geralmente a última)
-            const rearCamera = devices.find(camera => 
-              camera.label.toLowerCase().includes('back') || 
-              camera.label.toLowerCase().includes('traseira') ||
-              camera.label.toLowerCase().includes('environment')
-            );
-            
-            // Usar a câmera traseira se disponível, senão usar a primeira
-            const cameraId = rearCamera ? rearCamera.id : devices[0].id;
-            setCurrentCamera(cameraId);
-            
-            // Iniciar o escaneamento com esta câmera
-            startScanner(cameraId);
-          } else {
-            setMessage('Nenhuma câmera encontrada.');
-          }
-        } catch (error) {
-          console.error('Erro ao obter câmeras:', error);
-          setMessage('Falha ao acessar as câmeras. Verifique as permissões.');
-          if (onScanError) onScanError('Falha ao acessar as câmeras');
-        }
-      } catch (error) {
-        console.error('Erro ao inicializar scanner:', error);
-        setMessage('Falha ao inicializar o scanner de QR code.');
-        if (onScanError) onScanError('Falha ao inicializar scanner');
-      }
-    };
-
-    initScanner();
+    // Verificar explicitamente se estamos em um contexto seguro
+    const secure = window.isSecureContext || 
+                  window.location.protocol === 'https:' || 
+                  window.location.hostname === 'localhost' ||
+                  window.location.hostname === '127.0.0.1';
+    
+    setIsSecureContext(secure);
+    
+    if (!secure) {
+      console.error('O site precisa estar em HTTPS para acessar a câmera');
+      setMessage('Para usar a câmera, acesse este site via HTTPS. Use a entrada manual abaixo.');
+      setHasError(true);
+      setShowManualInput(true);
+      if (onScanError) onScanError('Secure context required');
+    } else {
+      // Se estiver em contexto seguro, inicializar o scanner
+      initializeScanner();
+    }
 
     // Limpar recursos ao desmontar
     return () => {
@@ -73,27 +55,140 @@ export default function QrCodeScanner({ onScanSuccess, onScanError, onClose }: Q
     };
   }, [onScanError]);
 
+  // Função para inicializar o scanner diretamente sem verificações restritivas
+  const initializeScanner = async () => {
+    try {
+      // Verificar se o navegador suporta getUserMedia
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        console.error('Este navegador não suporta acesso à câmera');
+        setMessage('Seu navegador não suporta acesso à câmera. Use a entrada manual abaixo.');
+        setHasError(true);
+        setShowManualInput(true);
+        if (onScanError) onScanError('Media devices not supported');
+        return;
+      }
+      
+      // Criar uma instância do scanner
+      const html5QrCode = new Html5Qrcode("qr-reader");
+      scannerRef.current = html5QrCode;
+      setHasError(false);
+      
+      try {
+        // Tentar obter acesso à câmera antes de buscar a lista
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        stream.getTracks().forEach(track => track.stop()); // Liberar a câmera após o teste
+        
+        // Buscar câmeras disponíveis
+        const devices = await Html5Qrcode.getCameras();
+        
+        if (devices && devices.length > 0) {
+          setCameras(devices);
+          console.log('Câmeras disponíveis:', devices);
+          
+          // Tentar usar a câmera traseira primeiro
+          const rearCamera = devices.find(camera => 
+            camera.label.toLowerCase().includes('back') || 
+            camera.label.toLowerCase().includes('traseira') ||
+            camera.label.toLowerCase().includes('environment')
+          );
+          
+          // Usar a câmera traseira se disponível, senão usar a primeira
+          const cameraId = rearCamera ? rearCamera.id : devices[0].id;
+          setCurrentCamera(cameraId);
+          
+          // Iniciar o escaneamento com esta câmera
+          await startScanner(cameraId);
+        } else {
+          throw new Error('Nenhuma câmera encontrada no dispositivo');
+        }
+      } catch (error: any) {
+        console.error('Erro ao buscar câmeras:', error);
+        
+        // Verificar se é o erro específico de contexto não seguro
+        if (error.toString().includes('secure context')) {
+          setMessage('Para usar a câmera, você precisa acessar este site via HTTPS. Use a entrada manual abaixo.');
+          setShowManualInput(true);
+        } else if (error.toString().includes('Permission denied') || error.toString().includes('Permission dismissed')) {
+          setMessage('Permissão da câmera negada. Verifique as configurações do seu navegador ou use a entrada manual.');
+          setShowManualInput(true);
+        } else {
+          setMessage('Câmera não disponível. Use a entrada manual abaixo.');
+          setShowManualInput(true);
+        }
+        
+        setHasError(true);
+        if (onScanError) onScanError(error);
+      }
+    } catch (error) {
+      console.error('Erro ao inicializar scanner:', error);
+      setMessage('Não foi possível inicializar o leitor de QR Code. Use a entrada manual.');
+      setHasError(true);
+      setShowManualInput(true);
+      if (onScanError) onScanError(error);
+    }
+  };
+
+  // Função para tentar novamente
+  const handleRetry = () => {
+    // Se não estiver em contexto seguro, não tentar novamente
+    if (isSecureContext === false) {
+      setMessage('Para usar a câmera, acesse este site via HTTPS. Use a entrada manual abaixo.');
+      setShowManualInput(true);
+      return;
+    }
+
+    setMessage('Tentando iniciar câmera novamente...');
+    setHasError(false);
+    
+    // Parar o scanner atual se estiver em execução
+    if (scannerRef.current) {
+      if (scannerRef.current.isScanning) {
+        scannerRef.current.stop().catch(console.error);
+      }
+      
+      // Remover a referência atual
+      scannerRef.current = null;
+    }
+    
+    // Limpar o elemento do scanner
+    const scannerElement = document.getElementById('qr-reader');
+    if (scannerElement) {
+      scannerElement.innerHTML = '';
+    }
+    
+    // Reiniciar o scanner
+    setTimeout(() => {
+      initializeScanner();
+    }, 500);
+  };
+
   // Alternar entre câmeras
   const switchCamera = async () => {
     if (!cameras || cameras.length <= 1) return;
     
-    // Parar o scanner atual
-    if (scannerRef.current && scannerRef.current.isScanning) {
-      await scannerRef.current.stop();
+    try {
+      // Parar o scanner atual
+      if (scannerRef.current && scannerRef.current.isScanning) {
+        await scannerRef.current.stop();
+      }
+      
+      // Encontrar a próxima câmera na lista
+      const currentIndex = cameras.findIndex(camera => camera.id === currentCamera);
+      const nextIndex = (currentIndex + 1) % cameras.length;
+      const nextCameraId = cameras[nextIndex].id;
+      
+      // Atualizar a câmera atual
+      setCurrentCamera(nextCameraId);
+      
+      // Reiniciar o scanner com a nova câmera
+      await startScanner(nextCameraId);
+      
+      setMessage(`Usando câmera: ${cameras[nextIndex].label || 'Desconhecida'}`);
+    } catch (error) {
+      console.error('Erro ao alternar câmeras:', error);
+      setMessage('Erro ao alternar câmeras. Tente novamente.');
+      setHasError(true);
     }
-
-    // Encontrar a próxima câmera na lista
-    const currentIndex = cameras.findIndex(camera => camera.id === currentCamera);
-    const nextIndex = (currentIndex + 1) % cameras.length;
-    const nextCameraId = cameras[nextIndex].id;
-    
-    // Atualizar a câmera atual
-    setCurrentCamera(nextCameraId);
-    
-    // Reiniciar o scanner com a nova câmera
-    startScanner(nextCameraId);
-    
-    setMessage(`Usando câmera: ${cameras[nextIndex].label || 'Desconhecida'}`);
   };
 
   // Iniciar o scanner com a câmera especificada
@@ -151,39 +246,172 @@ export default function QrCodeScanner({ onScanSuccess, onScanError, onClose }: Q
       setMessage('Aponte a câmera para o QR code...');
     } catch (error) {
       console.error('Erro ao iniciar scanner:', error);
-      setMessage('Falha ao iniciar a câmera. Tente novamente.');
+      setMessage('Falha ao iniciar a câmera. Você pode inserir o QR code manualmente.');
       setIsScanning(false);
+      setHasError(true);
       if (onScanError) onScanError(error);
+    }
+  };
+
+  // Processar entrada manual
+  const handleManualSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (manualQrValue.trim()) {
+      onScanSuccess(manualQrValue.trim());
+    }
+  };
+
+  // Colar do clipboard
+  const handlePaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      setManualQrValue(text);
+    } catch (error) {
+      console.error('Erro ao ler clipboard:', error);
+      alert('Não foi possível acessar a área de transferência. Tente colar manualmente (Ctrl+V).');
     }
   };
 
   return (
     <div className="qr-scanner-wrapper">
-      <div 
-        id="qr-reader" 
-        ref={scannerContainerRef} 
-        className="w-full h-64 overflow-hidden bg-gray-100 rounded-lg relative"
-      ></div>
-      
-      <div className="text-center mt-2 mb-2">
-        <p className={`text-sm ${isScanning ? 'text-blue-600' : 'text-red-500'}`}>
-          {message}
-        </p>
-      </div>
+      <div className="md:flex gap-4">
+        {/* Área de escaneamento da câmera - mostra apenas se estiver em contexto seguro */}
+        {isSecureContext && (
+          <div className={`${showManualInput ? 'hidden md:block' : 'block'} md:flex-1`}>
+            <div 
+              id="qr-reader" 
+              ref={scannerContainerRef} 
+              className="w-full h-64 overflow-hidden bg-gray-100 rounded-lg relative"
+            ></div>
+            
+            <div className="text-center mt-2 mb-2">
+              <p className={`text-sm ${isScanning ? 'text-blue-600' : (hasError ? 'text-red-500' : 'text-blue-600')}`}>
+                {message}
+              </p>
+            </div>
 
-      {cameras.length > 1 && (
-        <div className="flex justify-center mt-2 mb-4">
-          <Button 
-            type="button"
-            variant="info"
-            icon={FaSync}
-            onClick={switchCamera}
-            className="text-sm md:text-base flex items-center"
-          >
-            Alternar câmera
-          </Button>
+            <div className="flex justify-center mt-2 mb-4 gap-2 flex-wrap">
+              {hasError && isSecureContext && (
+                <Button 
+                  type="button"
+                  variant="danger"
+                  onClick={handleRetry}
+                  className="text-sm md:text-base flex items-center gap-2"
+                >
+                  <FaRedo size={14} />
+                  Tentar novamente
+                </Button>
+              )}
+              
+              {cameras.length > 1 && !hasError && (
+                <Button 
+                  type="button"
+                  variant="info"
+                  onClick={switchCamera}
+                  className="text-sm md:text-base flex items-center gap-2"
+                >
+                  <FaSync size={14} />
+                  Alternar câmera
+                </Button>
+              )}
+              
+              <Button 
+                type="button"
+                variant={showManualInput ? "primary" : "secondary"}
+                onClick={() => setShowManualInput(!showManualInput)}
+                className="text-sm md:text-base flex items-center gap-2 md:hidden"
+              >
+                <FaKeyboard size={14} />
+                {showManualInput ? "Usar câmera" : "Inserir manualmente"}
+              </Button>
+            </div>
+          </div>
+        )}
+        
+        {/* Área de entrada manual - sempre presente em dispositivos desktop, fica ao lado do scanner */}
+        <div className={`${(showManualInput || isSecureContext === false) ? 'block' : 'hidden md:block'} md:flex-1`}>
+          <div className="p-4 bg-gray-100 rounded-lg">
+            {isSecureContext === false && (
+              <div className="mb-4 p-3 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700">
+                <h4 className="font-bold">HTTPS Necessário</h4>
+                <p className="text-sm">
+                  O acesso à câmera só é permitido em sites HTTPS ou localhost por questões de segurança do navegador. 
+                  Como alternativa, você pode usar a entrada manual abaixo.
+                </p>
+                <div className="mt-2 bg-white p-2 rounded text-xs">
+                  <p className="font-semibold">Para resolver este problema:</p>
+                  <ol className="list-decimal list-inside">
+                    <li>Acesse o site via HTTPS</li>
+                    <li>Use "localhost" em desenvolvimento local</li>
+                    <li>Configure SSL no servidor web</li>
+                  </ol>
+                </div>
+              </div>
+            )}
+            
+            <h3 className="text-lg font-semibold mb-2">Inserir QR Code manualmente</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Cole o link do QR Code do cupom fiscal ou digite-o manualmente abaixo:
+            </p>
+            
+            <form onSubmit={handleManualSubmit} className="space-y-4">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={manualQrValue}
+                  onChange={(e) => setManualQrValue(e.target.value)}
+                  placeholder="https://portalsped.fazenda.mg.gov.br/portalnfce/sistema/qrcode.xhtml?p=..."
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  autoFocus={isSecureContext === false}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handlePaste}
+                  className="text-sm flex items-center gap-1"
+                >
+                  <FaPaste size={14} />
+                  Colar
+                </Button>
+              </div>
+              
+              <div className="text-xs text-gray-500 bg-blue-50 p-3 rounded-md">
+                <p className="font-medium mb-1">Como encontrar o link do QR Code:</p>
+                <ol className="list-decimal list-inside space-y-1">
+                  <li>Procure o QR Code na parte inferior do cupom fiscal</li>
+                  <li>Use outro aplicativo para escanear o QR Code e copiar o link</li>
+                  <li>Cole o link no campo acima</li>
+                </ol>
+                <p className="mt-2">Exemplo de formato:</p>
+                <code className="block mt-1 overflow-x-auto whitespace-nowrap text-xs">
+                  https://portalsped.fazenda.mg.gov.br/portalnfce/sistema/qrcode.xhtml?p=31250425102146015443650040001107141020411084|2|1|1|0172D6F09E7E1B814AD910004D4A9D003AA35C2D
+                </code>
+              </div>
+              
+              <div className="flex gap-2 justify-end">
+                {isSecureContext === true && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setShowManualInput(!showManualInput)}
+                    className="text-sm md:hidden"
+                  >
+                    Voltar para câmera
+                  </Button>
+                )}
+                <Button
+                  type="submit"
+                  variant="primary"
+                  className="text-sm"
+                  disabled={!manualQrValue.trim()}
+                >
+                  Confirmar
+                </Button>
+              </div>
+            </form>
+          </div>
         </div>
-      )}
+      </div>
 
       <style jsx>{`
         .qr-scanner-wrapper {
@@ -195,6 +423,7 @@ export default function QrCodeScanner({ onScanSuccess, onScanError, onClose }: Q
           border: none !important;
           border-radius: 0.5rem !important;
           overflow: hidden !important;
+          min-height: 250px !important;
         }
 
         :global(#qr-reader video) {

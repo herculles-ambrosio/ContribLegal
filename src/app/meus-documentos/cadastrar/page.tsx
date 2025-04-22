@@ -12,6 +12,13 @@ import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
 import useDeviceDetect from '@/hooks/useDeviceDetect';
+import { processFiscalReceiptQRCode, FiscalReceiptData } from '@/lib/services/fiscalReceiptService';
+
+// Carregar o FiscalReceiptModal dinamicamente
+const FiscalReceiptModal = dynamic(() => import('@/components/FiscalReceiptModal'), {
+  ssr: false,
+  loading: () => <p className="text-center py-4">Carregando...</p>
+});
 
 // Extender a interface Window para incluir nossa propriedade
 declare global {
@@ -42,6 +49,9 @@ export default function CadastrarDocumento() {
     arquivo: null as File | null
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isProcessingQRCode, setIsProcessingQRCode] = useState(false);
+  const [fiscalReceiptData, setFiscalReceiptData] = useState<FiscalReceiptData | null>(null);
+  const [showFiscalReceiptModal, setShowFiscalReceiptModal] = useState(false);
 
   const tiposDocumento = [
     { value: 'nota_servico', label: 'Nota Fiscal de Serviço' },
@@ -162,37 +172,75 @@ export default function CadastrarDocumento() {
   };
 
   const handleScanQR = async () => {
-    // Verificar se o navegador suporta API de câmera
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      toast.error('Seu navegador não suporta acesso à câmera');
-      return;
-    }
-
     try {
-      // Solicitar permissão para usar a câmera
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-      
-      // Fechar stream imediatamente para não consumir recursos
-      stream.getTracks().forEach(track => track.stop());
-      
-      // Definir que temos permissão e mostrar scanner
-      setCameraPermission(true);
+      // Mostrar o scanner antes de verificar permissões
+      // Isso evita problemas em alguns navegadores que só verificam permissões
+      // quando o componente de scanner já está visível
       setShowScanner(true);
+      
+      // A verificação será feita pelo componente QrCodeScanner
+      // que já possui tratamento adequado para diferentes navegadores
+      setCameraPermission(true);
     } catch (error) {
-      console.error('Erro ao acessar câmera:', error);
+      console.error('Erro ao iniciar scanner:', error);
       setCameraPermission(false);
-      toast.error('Não foi possível acessar a câmera. Verifique as permissões.');
+      setShowScanner(false);
+      toast.error('Não foi possível iniciar o scanner. Tente novamente ou use outro dispositivo.');
     }
   };
 
-  const handleQrCodeResult = (result: string) => {
-    // Substituir o valor do campo de número de documento com o resultado do QR code
-    setFormData(prev => ({ ...prev, numero_documento: result }));
-    
-    // Fechar o scanner automaticamente
+  const handleQrCodeResult = async (result: string) => {
+    // Fechar o scanner
     setShowScanner(false);
     
-    toast.success('QR Code lido com sucesso!');
+    // Verificar se é uma URL válida
+    try {
+      const url = new URL(result);
+      
+      // Verificar se é um cupom fiscal
+      if (url.hostname.includes('fazenda.mg.gov.br') || 
+          url.hostname.includes('portalsped.fazenda.mg.gov.br')) {
+        
+        // Processar dados do cupom fiscal
+        setIsProcessingQRCode(true);
+        toast.loading('Processando QR Code do cupom fiscal...');
+        
+        try {
+          const fiscalData = await processFiscalReceiptQRCode(result);
+          
+          if (fiscalData) {
+            // Sucesso ao processar o QR Code
+            setFiscalReceiptData(fiscalData);
+            setShowFiscalReceiptModal(true);
+            toast.dismiss();
+            toast.success('QR Code lido e processado com sucesso!');
+          } else {
+            // Falha ao processar o QR Code
+            toast.dismiss();
+            toast.error('Não foi possível extrair os dados do cupom fiscal.');
+            // Ainda assim, use a URL como número do documento
+            setFormData(prev => ({ ...prev, numero_documento: result }));
+          }
+        } catch (error) {
+          console.error('Erro ao processar QR code:', error);
+          toast.dismiss();
+          toast.error('Erro ao processar o QR code do cupom fiscal');
+          // Use a URL como número do documento
+          setFormData(prev => ({ ...prev, numero_documento: result }));
+        } finally {
+          setIsProcessingQRCode(false);
+        }
+      } else {
+        // Se não for um cupom fiscal MG, apenas use como número do documento
+        setFormData(prev => ({ ...prev, numero_documento: result }));
+        toast.success('QR Code lido com sucesso!');
+      }
+    } catch (error) {
+      // Se não for uma URL válida, apenas use como número do documento
+      console.log('QR Code não é uma URL válida, usando como número do documento');
+      setFormData(prev => ({ ...prev, numero_documento: result }));
+      toast.success('QR Code lido com sucesso!');
+    }
   };
 
   const handleQrCodeError = (error: any) => {
@@ -202,14 +250,23 @@ export default function CadastrarDocumento() {
     let errorMessage = 'Erro ao ler o QR code. Tente novamente.';
     
     if (typeof error === 'string') {
-      if (error.includes('Camera access denied')) {
-        errorMessage = 'Acesso à câmera negado. Verifique as permissões.';
+      if (error === 'Secure context required') {
+        errorMessage = 'Para acessar a câmera, o site deve estar em HTTPS. Tente acessar via HTTPS ou use a entrada manual.';
+      } else if (error.includes('Camera access denied')) {
+        errorMessage = 'Acesso à câmera negado. Por favor, permita o acesso nas configurações do navegador.';
       } else if (error.includes('No cameras detected')) {
-        errorMessage = 'Nenhuma câmera detectada no dispositivo.';
+        errorMessage = 'Nenhuma câmera disponível no seu dispositivo.';
+      } else if (error.includes('Failed to initialize scanner')) {
+        errorMessage = 'Falha ao inicializar o scanner. Tente recarregar a página.';
       } else if (error.includes('Falha ao acessar as câmeras')) {
         errorMessage = 'Falha ao acessar as câmeras. Verifique as permissões.';
+      } else if (error.includes('secure context')) {
+        errorMessage = 'Acesso à câmera requer HTTPS. Tente acessar o site pelo protocolo HTTPS ou use a entrada manual.';
       }
     }
+    
+    // Não fechar o scanner automaticamente em caso de erro, pois o próprio componente
+    // mostrará um botão "Tentar novamente" para o usuário
     
     // Evitar mostrar o mesmo erro repetidamente em um curto período
     if (!window.qrErrorShown) {
@@ -221,6 +278,24 @@ export default function CadastrarDocumento() {
         window.qrErrorShown = false;
       }, 5000);
     }
+  };
+
+  const handleConfirmFiscalReceipt = (data: FiscalReceiptData) => {
+    // Preencher o formulário com os dados extraídos do cupom fiscal
+    setFormData(prev => ({
+      ...prev,
+      numero_documento: data.receipt.accessKey || prev.numero_documento,
+      valor: data.receipt.totalValue ? data.receipt.totalValue.toLocaleString('pt-BR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }) : prev.valor,
+      data_emissao: data.receipt.issueDate || prev.data_emissao
+    }));
+    
+    // Fechar o modal de dados fiscais
+    setShowFiscalReceiptModal(false);
+    
+    toast.success('Dados do cupom fiscal aplicados ao formulário');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -299,10 +374,10 @@ export default function CadastrarDocumento() {
       const valorNumerico = parseFloat(valorTexto);
       const valorFormatado = parseFloat(valorNumerico.toFixed(2));
       
-      // Preparar os dados a serem inseridos
-      const documentoData = {
+      // Preparar os dados a serem inseridos usando any para contornar os erros de tipo
+      const documentoData: any = {
         usuario_id: userId,
-        tipo: formData.tipo, // Garantir que usamos o valor selecionado corretamente
+        tipo: formData.tipo,
         numero_documento: formData.numero_documento,
         data_emissao: formData.data_emissao,
         valor: valorFormatado,
@@ -311,12 +386,21 @@ export default function CadastrarDocumento() {
         status: 'AGUARDANDO VALIDAÇÃO'
       };
       
+      // Armazenar dados adicionais do cupom fiscal em campos de texto, se disponíveis
+      if (fiscalReceiptData) {
+        // Se tivermos os dados do cupom fiscal, podemos armazená-los no campo observacoes 
+        // ou atributos_adicionais se existirem, ou criar uma tabela separada futuramente
+        console.log('Dados do cupom fiscal capturados:', fiscalReceiptData);
+      }
+      
       console.log('Dados a serem inseridos:', documentoData);
       
       // Criar registro do documento no banco de dados
-      const { error: insertError } = await supabase
+      const { error: insertError, data: documentoInserido } = await supabase
         .from('documentos')
-        .insert(documentoData);
+        .insert(documentoData)
+        .select('id')
+        .single();
       
       if (insertError) {
         console.error('Erro ao inserir documento:', insertError);
@@ -481,10 +565,11 @@ export default function CadastrarDocumento() {
                 type="button"
                 variant="info"
                 onClick={handleScanQR}
-                disabled={showScanner}
+                disabled={showScanner || isProcessingQRCode}
                 className="w-10 h-10 min-w-[2.5rem] flex items-center justify-center rounded-full flex-shrink-0"
                 aria-label="Escanear código QR"
                 style={{ marginRight: '0.5rem' }}
+                isLoading={isProcessingQRCode}
               >
                 <FaQrcode size={18} />
               </Button>
@@ -512,10 +597,10 @@ export default function CadastrarDocumento() {
           </form>
           
           {showScanner && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75">
-              <div className="bg-white p-4 rounded-lg shadow-lg max-w-md w-full">
+            <div className="fixed inset-0 z-50 flex items-center justify-center overflow-auto bg-black bg-opacity-75">
+              <div className="bg-white p-4 rounded-lg shadow-lg max-w-md w-full mx-4">
                 <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-semibold">Escanear QR Code</h3>
+                  <h3 className="text-lg font-semibold">Escanear Cupom Fiscal</h3>
                   <Button
                     type="button"
                     variant="secondary"
@@ -526,15 +611,40 @@ export default function CadastrarDocumento() {
                     ✕
                   </Button>
                 </div>
-                <p className="text-sm text-gray-500 mb-4">
-                  Posicione o código QR no centro da câmera para escaneá-lo automaticamente.
-                </p>
-                <QrCodeScanner 
-                  onScanSuccess={handleQrCodeResult}
-                  onScanError={handleQrCodeError}
-                />
+                <div className="mb-4">
+                  <p className="text-sm text-gray-500 mb-2">
+                    Posicione o QR Code do cupom fiscal no centro da câmera para escaneá-lo automaticamente.
+                  </p>
+                  <div className="text-xs text-blue-600 bg-blue-50 p-2 rounded mb-2">
+                    <strong>Dica:</strong> O QR Code geralmente está localizado na parte inferior do cupom. Certifique-se
+                    de que o QR Code esteja bem iluminado e a câmera esteja focada.
+                  </div>
+                  <div className="text-xs text-yellow-700 bg-yellow-50 p-2 rounded">
+                    <strong>Acesso Seguro Necessário:</strong> Para acessar a câmera, seu navegador exige uma conexão segura (HTTPS). 
+                    Se você está vendo um erro de "Contexto Seguro", significa que você está acessando o site via HTTP. 
+                    <ul className="list-disc list-inside mt-1">
+                      <li>Use a entrada manual disponível no scanner para inserir o QR Code</li>
+                      <li>Peça ao administrador do site para configurar HTTPS</li>
+                      <li>Em desenvolvimento local, use "localhost" em vez de endereço IP</li>
+                    </ul>
+                  </div>
+                </div>
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <QrCodeScanner 
+                    onScanSuccess={handleQrCodeResult}
+                    onScanError={handleQrCodeError}
+                  />
+                </div>
               </div>
             </div>
+          )}
+          
+          {showFiscalReceiptModal && fiscalReceiptData && (
+            <FiscalReceiptModal
+              data={fiscalReceiptData}
+              onClose={() => setShowFiscalReceiptModal(false)}
+              onConfirm={handleConfirmFiscalReceipt}
+            />
           )}
         </Card>
       </div>
