@@ -291,7 +291,7 @@ export default function QrCodeScanner({ onScanSuccess, onScanError, onClose }: Q
             </div>
 
             <div className="flex justify-center mt-2 mb-4 gap-2 flex-wrap">
-              {hasError && isSecureContext && (
+              {hasError && isSecureContext === true && (
                 <Button 
                   type="button"
                   variant="danger"
