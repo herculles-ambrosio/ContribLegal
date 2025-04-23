@@ -1,20 +1,20 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, Suspense } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
-export default function AuthCallbackPage() {
+// Componente interno que usa useSearchParams
+function AuthCallbackContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-
+  
   useEffect(() => {
-    // Extrair os parâmetros da URL após autenticação
+    // Obter o código da URL usando window.location
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    
     const handleRedirectResult = async () => {
       try {
-        // Verificar se tem parâmetros de autenticação do Supabase
-        const code = searchParams.get('code');
-        
         if (code) {
           // Processar o resultado da autenticação
           const { error } = await supabase.auth.exchangeCodeForSession(code);
@@ -38,7 +38,7 @@ export default function AuthCallbackPage() {
     };
 
     handleRedirectResult();
-  }, [router, searchParams]);
+  }, [router]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-100">
@@ -52,5 +52,23 @@ export default function AuthCallbackPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+// Componente principal com Suspense
+export default function AuthCallbackPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-slate-100">
+        <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md text-center">
+          <h1 className="text-2xl font-bold mb-4">Carregando...</h1>
+          <div className="flex justify-center my-6">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+          </div>
+        </div>
+      </div>
+    }>
+      <AuthCallbackContent />
+    </Suspense>
   );
 }
