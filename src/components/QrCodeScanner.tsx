@@ -33,6 +33,7 @@ export default function QrCodeScanner({ onScanSuccess, onScanError, onClose }: Q
                   window.location.hostname === 'localhost' ||
                   window.location.hostname === '127.0.0.1';
     
+    console.log('Contexto seguro:', secure);
     setIsSecureContext(secure);
     
     if (!secure) {
@@ -42,12 +43,16 @@ export default function QrCodeScanner({ onScanSuccess, onScanError, onClose }: Q
       setShowManualInput(true);
       if (onScanError) onScanError('Secure context required');
     } else {
-      // Se estiver em contexto seguro, inicializar o scanner
-      initializeScanner();
+      // Se estiver em contexto seguro, esperar um momento para o DOM render completamente
+      setTimeout(() => {
+        console.log('Inicializando scanner após delay...');
+        initializeScanner();
+      }, 500);
     }
 
     // Limpar recursos ao desmontar
     return () => {
+      console.log('Desmontando componente QrCodeScanner');
       if (scannerRef.current && scannerRef.current.isScanning) {
         scannerRef.current.stop()
           .catch(error => console.error('Erro ao parar scanner:', error));
@@ -68,10 +73,29 @@ export default function QrCodeScanner({ onScanSuccess, onScanError, onClose }: Q
         return;
       }
       
-      // Criar uma instância do scanner
-      const html5QrCode = new Html5Qrcode("qr-reader");
-      scannerRef.current = html5QrCode;
-      setHasError(false);
+      // Garantir que o elemento existe antes de inicializar o scanner
+      const qrReaderElement = document.getElementById("qr-reader");
+      if (!qrReaderElement) {
+        console.error('Elemento qr-reader não encontrado no DOM');
+        setMessage('Erro ao inicializar scanner: elemento HTML não encontrado.');
+        setHasError(true);
+        if (onScanError) onScanError('QR reader element not found');
+        return;
+      }
+      
+      // Criar uma instância do scanner com tratamento de erro melhorado
+      try {
+        const html5QrCode = new Html5Qrcode("qr-reader");
+        scannerRef.current = html5QrCode;
+        setHasError(false);
+      } catch (scannerError) {
+        console.error('Erro ao criar instância do scanner:', scannerError);
+        setMessage('Falha ao inicializar o leitor de QR Code. Tente recarregar a página.');
+        setHasError(true);
+        setShowManualInput(true);
+        if (onScanError) onScanError(scannerError);
+        return;
+      }
       
       try {
         // Tentar obter acesso à câmera antes de buscar a lista
@@ -193,23 +217,34 @@ export default function QrCodeScanner({ onScanSuccess, onScanError, onClose }: Q
 
   // Iniciar o scanner com a câmera especificada
   const startScanner = async (cameraId: string) => {
-    if (!scannerRef.current) return;
+    if (!scannerRef.current) {
+      console.error('Scanner não inicializado');
+      return;
+    }
     
     try {
       setIsScanning(true);
+      console.log('Iniciando scanner com câmera ID:', cameraId);
       
       const qrCodeSuccessCallback = (decodedText: string) => {
+        console.log('QR Code detectado:', decodedText);
         // Parar o scanner após um sucesso
         if (scannerRef.current) {
           scannerRef.current.stop()
             .then(() => {
               setIsScanning(false);
+              console.log('Scanner parado com sucesso após detecção');
               // Chamar o callback de sucesso imediatamente
               onScanSuccess(decodedText);
             })
-            .catch(error => console.error('Erro ao parar scanner após sucesso:', error));
+            .catch(error => {
+              console.error('Erro ao parar scanner após sucesso:', error);
+              // Mesmo com erro, chamar o callback
+              onScanSuccess(decodedText);
+            });
         } else {
           // Se por algum motivo o scanner não estiver disponível, ainda assim chamar o callback
+          console.log('Scanner não disponível ao tentar parar, chamando callback diretamente');
           onScanSuccess(decodedText);
         }
       };

@@ -604,7 +604,10 @@ export default function CadastrarDocumento() {
                   <Button
                     type="button"
                     variant="secondary"
-                    onClick={() => setShowScanner(false)}
+                    onClick={() => {
+                      setShowScanner(false);
+                      setCameraPermission(false);
+                    }}
                     className="text-sm p-2"
                     aria-label="Fechar"
                   >
@@ -629,10 +632,17 @@ export default function CadastrarDocumento() {
                     </ul>
                   </div>
                 </div>
-                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="border border-gray-200 rounded-lg overflow-hidden" id="scanner-container">
                   <QrCodeScanner 
                     onScanSuccess={handleQrCodeResult}
-                    onScanError={handleQrCodeError}
+                    onScanError={(error) => {
+                      console.log("Erro no scanner:", error);
+                      handleQrCodeError(error);
+                    }}
+                    onClose={() => {
+                      setShowScanner(false);
+                      setCameraPermission(false);
+                    }}
                   />
                 </div>
               </div>
