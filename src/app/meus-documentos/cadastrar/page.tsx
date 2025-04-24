@@ -598,8 +598,8 @@ export default function CadastrarDocumento() {
           
           {showScanner && (
             <div className="fixed inset-0 z-50 flex items-center justify-center overflow-auto bg-black bg-opacity-75">
-              <div className="bg-white p-4 rounded-lg shadow-lg max-w-md w-full mx-4">
-                <div className="flex justify-between items-center mb-4">
+              <div className="bg-white p-4 rounded-lg shadow-lg max-w-lg w-full mx-4">
+                <div className="flex justify-between items-center mb-3">
                   <h3 className="text-lg font-semibold">Escanear Cupom Fiscal</h3>
                   <Button
                     type="button"
@@ -614,7 +614,7 @@ export default function CadastrarDocumento() {
                     ✕
                   </Button>
                 </div>
-                <div className="mb-4">
+                <div className="mb-3">
                   <p className="text-sm text-gray-500 mb-2">
                     Posicione o QR Code do cupom fiscal no centro da câmera para escaneá-lo automaticamente.
                   </p>
@@ -622,17 +622,8 @@ export default function CadastrarDocumento() {
                     <strong>Dica:</strong> O QR Code geralmente está localizado na parte inferior do cupom. Certifique-se
                     de que o QR Code esteja bem iluminado e a câmera esteja focada.
                   </div>
-                  <div className="text-xs text-yellow-700 bg-yellow-50 p-2 rounded">
-                    <strong>Acesso Seguro Necessário:</strong> Para acessar a câmera, seu navegador exige uma conexão segura (HTTPS). 
-                    Se você está vendo um erro de "Contexto Seguro", significa que você está acessando o site via HTTP. 
-                    <ul className="list-disc list-inside mt-1">
-                      <li>Use a entrada manual disponível no scanner para inserir o QR Code</li>
-                      <li>Peça ao administrador do site para configurar HTTPS</li>
-                      <li>Em desenvolvimento local, use "localhost" em vez de endereço IP</li>
-                    </ul>
-                  </div>
                 </div>
-                <div className="border border-gray-200 rounded-lg overflow-hidden" id="scanner-container">
+                <div className="border border-gray-200 rounded-lg overflow-hidden mb-3" id="scanner-container">
                   <QrCodeScanner 
                     onScanSuccess={handleQrCodeResult}
                     onScanError={(error) => {
@@ -644,6 +635,14 @@ export default function CadastrarDocumento() {
                       setCameraPermission(false);
                     }}
                   />
+                </div>
+                <div className="text-xs text-yellow-700 bg-yellow-50 p-2 rounded mt-2">
+                  <strong>Acesso Seguro Necessário:</strong> Para acessar a câmera, seu navegador exige uma conexão segura (HTTPS). 
+                  Se você está vendo um erro de "Contexto Seguro", significa que você está acessando o site via HTTP. 
+                  <ul className="list-disc list-inside mt-1">
+                    <li>Use a entrada manual disponível no scanner para inserir o QR Code</li>
+                    <li>Em desenvolvimento local, use "localhost" em vez de endereço IP</li>
+                  </ul>
                 </div>
               </div>
             </div>

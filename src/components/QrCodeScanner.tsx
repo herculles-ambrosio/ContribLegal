@@ -250,12 +250,14 @@ export default function QrCodeScanner({ onScanSuccess, onScanError, onClose }: Q
       };
 
       const config = {
-        fps: 10,
+        fps: 15,
         qrbox: {
-          width: 250,
-          height: 250,
+          width: 320,
+          height: 320,
         },
-        aspectRatio: 1.0
+        aspectRatio: 1.0,
+        disableFlip: false,
+        rememberLastUsedCamera: true
       };
 
       await scannerRef.current.start(
@@ -316,7 +318,7 @@ export default function QrCodeScanner({ onScanSuccess, onScanError, onClose }: Q
             <div 
               id="qr-reader" 
               ref={scannerContainerRef} 
-              className="w-full h-64 overflow-hidden bg-gray-100 rounded-lg relative"
+              className="w-full h-80 overflow-hidden bg-gray-100 rounded-lg relative"
             ></div>
             
             <div className="text-center mt-2 mb-2">
@@ -458,7 +460,7 @@ export default function QrCodeScanner({ onScanSuccess, onScanError, onClose }: Q
           border: none !important;
           border-radius: 0.5rem !important;
           overflow: hidden !important;
-          min-height: 250px !important;
+          min-height: 320px !important;
         }
 
         :global(#qr-reader video) {
@@ -471,6 +473,7 @@ export default function QrCodeScanner({ onScanSuccess, onScanError, onClose }: Q
         :global(#qr-reader__scan_region) {
           background: rgba(0, 0, 0, 0.1) !important;
           overflow: hidden !important;
+          position: relative !important;
         }
 
         :global(#qr-reader__scan_region img) {
@@ -479,6 +482,19 @@ export default function QrCodeScanner({ onScanSuccess, onScanError, onClose }: Q
 
         :global(#qr-reader__dashboard) {
           display: none !important;
+        }
+        
+        /* Estilo para as linhas de escaneamento */
+        :global(#qr-reader__scan_region::before) {
+          content: '' !important;
+          position: absolute !important;
+          top: 0 !important;
+          left: 0 !important;
+          width: 100% !important;
+          height: 100% !important;
+          border: 4px solid rgba(0, 123, 255, 0.7) !important;
+          box-sizing: border-box !important;
+          pointer-events: none !important;
         }
       `}</style>
     </div>
