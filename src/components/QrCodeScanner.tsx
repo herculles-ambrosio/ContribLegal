@@ -249,16 +249,31 @@ export default function QrCodeScanner({ onScanSuccess, onScanError, onClose }: Q
         }
       };
 
+      // Melhoria na configuração para detecção mais eficiente
       const config = {
-        fps: 15,
+        fps: 20, // Aumentar taxa de quadros para melhor detecção
         qrbox: {
-          width: 320,
-          height: 320,
+          width: 400,
+          height: 400,
         },
         aspectRatio: 1.0,
         disableFlip: false,
-        rememberLastUsedCamera: true
+        rememberLastUsedCamera: true,
+        supportedScanTypes: [
+          { format: "QR_CODE", formatsToSupport: ["QR_CODE"] }
+        ],
+        experimentalFeatures: {
+          useBarCodeDetectorIfSupported: true
+        },
+        formatsToSupport: ["QR_CODE"]
       };
+
+      console.log('Iniciando scanner com configuração:', JSON.stringify(config));
+
+      // Limpar qualquer instância anterior
+      if (scannerRef.current.isScanning) {
+        await scannerRef.current.stop();
+      }
 
       await scannerRef.current.start(
         cameraId, 
@@ -318,7 +333,8 @@ export default function QrCodeScanner({ onScanSuccess, onScanError, onClose }: Q
             <div 
               id="qr-reader" 
               ref={scannerContainerRef} 
-              className="w-full h-80 overflow-hidden bg-gray-100 rounded-lg relative"
+              className="w-full aspect-square overflow-hidden bg-gray-100 rounded-lg relative"
+              style={{ maxHeight: "500px", minHeight: "400px" }}
             ></div>
             
             <div className="text-center mt-2 mb-2">
@@ -460,12 +476,14 @@ export default function QrCodeScanner({ onScanSuccess, onScanError, onClose }: Q
           border: none !important;
           border-radius: 0.5rem !important;
           overflow: hidden !important;
-          min-height: 320px !important;
+          min-height: 400px !important;
+          aspect-ratio: 1/1 !important;
+          position: relative !important;
         }
 
         :global(#qr-reader video) {
           width: 100% !important;
-          height: auto !important;
+          height: 100% !important;
           object-fit: cover !important;
           border-radius: 0.375rem !important;
         }
@@ -474,6 +492,9 @@ export default function QrCodeScanner({ onScanSuccess, onScanError, onClose }: Q
           background: rgba(0, 0, 0, 0.1) !important;
           overflow: hidden !important;
           position: relative !important;
+          width: 90% !important;
+          height: 90% !important;
+          margin: 5% auto !important;
         }
 
         :global(#qr-reader__scan_region img) {
@@ -492,9 +513,24 @@ export default function QrCodeScanner({ onScanSuccess, onScanError, onClose }: Q
           left: 0 !important;
           width: 100% !important;
           height: 100% !important;
-          border: 4px solid rgba(0, 123, 255, 0.7) !important;
+          border: 8px solid rgba(0, 123, 255, 0.7) !important;
           box-sizing: border-box !important;
           pointer-events: none !important;
+        }
+
+        /* Adicionar guias para facilitar o alinhamento */
+        :global(#qr-reader::after) {
+          content: '' !important;
+          position: absolute !important;
+          top: 50% !important;
+          left: 50% !important;
+          width: 60% !important;
+          height: 60% !important;
+          transform: translate(-50%, -50%) !important;
+          border: 4px dashed rgba(255, 255, 255, 0.5) !important;
+          box-sizing: border-box !important;
+          pointer-events: none !important;
+          z-index: 10 !important;
         }
       `}</style>
     </div>

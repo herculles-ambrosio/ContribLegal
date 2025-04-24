@@ -6,7 +6,7 @@ import Card from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
 import Button from '@/components/ui/Button';
 import { useRouter } from 'next/navigation';
-import { FaFileInvoice, FaCalendarAlt, FaMoneyBillWave, FaUpload, FaQrcode } from 'react-icons/fa';
+import { FaFileInvoice, FaCalendarAlt, FaMoneyBillWave, FaUpload, FaQrcode, FaSync } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
@@ -431,6 +431,11 @@ export default function CadastrarDocumento() {
     }
   };
 
+  const switchCamera = () => {
+    // Implemente a lógica para alternar entre câmeras
+    console.log('Alternando câmera');
+  };
+
   return (
     <Layout isAuthenticated>
       <div className="flex justify-center items-center min-h-[70vh]">
@@ -597,10 +602,10 @@ export default function CadastrarDocumento() {
           </form>
           
           {showScanner && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center overflow-auto bg-black bg-opacity-75">
-              <div className="bg-white p-4 rounded-lg shadow-lg max-w-lg w-full mx-4">
-                <div className="flex justify-between items-center mb-3">
-                  <h3 className="text-lg font-semibold">Escanear Cupom Fiscal</h3>
+            <div className="fixed inset-0 z-50 flex items-center justify-center overflow-auto bg-black bg-opacity-80 p-2">
+              <div className="bg-white p-4 rounded-lg shadow-xl max-w-xl w-full mx-4">
+                <div className="flex justify-between items-center mb-2">
+                  <h3 className="text-lg font-bold">Escanear Cupom Fiscal</h3>
                   <Button
                     type="button"
                     variant="secondary"
@@ -614,16 +619,11 @@ export default function CadastrarDocumento() {
                     ✕
                   </Button>
                 </div>
-                <div className="mb-3">
-                  <p className="text-sm text-gray-500 mb-2">
-                    Posicione o QR Code do cupom fiscal no centro da câmera para escaneá-lo automaticamente.
-                  </p>
-                  <div className="text-xs text-blue-600 bg-blue-50 p-2 rounded mb-2">
-                    <strong>Dica:</strong> O QR Code geralmente está localizado na parte inferior do cupom. Certifique-se
-                    de que o QR Code esteja bem iluminado e a câmera esteja focada.
-                  </div>
-                </div>
-                <div className="border border-gray-200 rounded-lg overflow-hidden mb-3" id="scanner-container">
+                <p className="text-sm text-gray-600 mb-2">
+                  Posicione o QR Code no centro do quadrado pontilhado e mantenha-o a uma distância adequada.
+                </p>
+                
+                <div className="border-2 border-blue-500 rounded-lg overflow-hidden mb-3" id="scanner-container">
                   <QrCodeScanner 
                     onScanSuccess={handleQrCodeResult}
                     onScanError={(error) => {
@@ -636,13 +636,21 @@ export default function CadastrarDocumento() {
                     }}
                   />
                 </div>
-                <div className="text-xs text-yellow-700 bg-yellow-50 p-2 rounded mt-2">
-                  <strong>Acesso Seguro Necessário:</strong> Para acessar a câmera, seu navegador exige uma conexão segura (HTTPS). 
-                  Se você está vendo um erro de "Contexto Seguro", significa que você está acessando o site via HTTP. 
-                  <ul className="list-disc list-inside mt-1">
-                    <li>Use a entrada manual disponível no scanner para inserir o QR Code</li>
-                    <li>Em desenvolvimento local, use "localhost" em vez de endereço IP</li>
-                  </ul>
+                
+                <div className="flex justify-between items-center">
+                  <div className="text-xs text-blue-600 bg-blue-50 p-2 rounded">
+                    <strong>Dica:</strong> Certifique-se de que o QR Code esteja bem iluminado e a câmera esteja focada.
+                  </div>
+                  
+                  <Button
+                    type="button"
+                    variant="info"
+                    onClick={switchCamera}
+                    className="text-xs md:text-sm flex items-center gap-1"
+                  >
+                    <FaSync size={12} />
+                    Alternar câmera
+                  </Button>
                 </div>
               </div>
             </div>
