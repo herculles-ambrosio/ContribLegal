@@ -1,0 +1,8 @@
+# Não ignorar as pastas app e pages
+!app/
+!pages/
+
+# Ignorar arquivos grandes ou não essenciais
+*.log
+node_modules/.cache/
+.env*.local 

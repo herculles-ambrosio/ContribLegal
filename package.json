@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "vercel-build": "next build",
+    "vercel-build": "node scripts/build-vercel.js",
     "create-admin": "node -r dotenv/config src/scripts/create-admin.js",
     "check-admin": "node -r dotenv/config src/scripts/check-admin.js",
     "recreate-admin-auth": "node -r dotenv/config src/scripts/recreate-admin-auth.js",
