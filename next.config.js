@@ -15,10 +15,14 @@ const nextConfig = {
   // Permitir origens específicas em ambiente de desenvolvimento
   experimental: {
     allowedDevOrigins: ['192.168.1.225'],
+    appDir: true
   },
   
   // Diretório de origem
-  distDir: '.next'
+  distDir: '.next',
+  
+  // Define o diretório que contém o código-fonte da aplicação
+  transpilePackages: ['src']
 };
 
 module.exports = nextConfig; 

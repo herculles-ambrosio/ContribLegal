@@ -2,5 +2,6 @@
   "buildCommand": "next build",
   "outputDirectory": ".next",
   "installCommand": "npm install",
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "rootDirectory": "."
 } 
