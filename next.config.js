@@ -14,8 +14,7 @@ const nextConfig = {
   
   // Permitir origens específicas em ambiente de desenvolvimento
   experimental: {
-    allowedDevOrigins: ['192.168.1.225'],
-    appDir: true
+    allowedDevOrigins: ['192.168.1.225']
   },
   
   // Diretório de origem
