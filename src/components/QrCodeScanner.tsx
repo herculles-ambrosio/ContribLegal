@@ -328,7 +328,7 @@ export default function QrCodeScanner({ onScanSuccess, onScanError, onClose }: Q
     <div className="qr-scanner-wrapper">
       <div className="md:flex gap-4">
         {/* Área de escaneamento da câmera - mostra apenas se estiver em contexto seguro */}
-        {isSecureContext && (
+        {isSecureContext === true && (
           <div className={`${showManualInput ? 'hidden md:block' : 'block'} md:flex-1`}>
             <div 
               id="qr-reader" 

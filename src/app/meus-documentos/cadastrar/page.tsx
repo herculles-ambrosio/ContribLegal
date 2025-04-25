@@ -193,53 +193,37 @@ export default function CadastrarDocumento() {
     // Fechar o scanner
     setShowScanner(false);
     
-    // Verificar se é uma URL válida
+    console.log('QR Code lido:', result);
+    
+    // Processar dados do cupom fiscal independente do formato
+    setIsProcessingQRCode(true);
+    toast.loading('Processando QR Code...');
+    
     try {
-      const url = new URL(result);
+      // Tentar processar como cupom fiscal
+      const fiscalData = await processFiscalReceiptQRCode(result);
       
-      // Verificar se é um cupom fiscal
-      if (url.hostname.includes('fazenda.mg.gov.br') || 
-          url.hostname.includes('portalsped.fazenda.mg.gov.br')) {
-        
-        // Processar dados do cupom fiscal
-        setIsProcessingQRCode(true);
-        toast.loading('Processando QR Code do cupom fiscal...');
-        
-        try {
-          const fiscalData = await processFiscalReceiptQRCode(result);
-          
-          if (fiscalData) {
-            // Sucesso ao processar o QR Code
-            setFiscalReceiptData(fiscalData);
-            setShowFiscalReceiptModal(true);
-            toast.dismiss();
-            toast.success('QR Code lido e processado com sucesso!');
-          } else {
-            // Falha ao processar o QR Code
-            toast.dismiss();
-            toast.error('Não foi possível extrair os dados do cupom fiscal.');
-            // Ainda assim, use a URL como número do documento
-            setFormData(prev => ({ ...prev, numero_documento: result }));
-          }
-        } catch (error) {
-          console.error('Erro ao processar QR code:', error);
-          toast.dismiss();
-          toast.error('Erro ao processar o QR code do cupom fiscal');
-          // Use a URL como número do documento
-          setFormData(prev => ({ ...prev, numero_documento: result }));
-        } finally {
-          setIsProcessingQRCode(false);
-        }
+      if (fiscalData) {
+        // Sucesso ao processar o QR Code
+        setFiscalReceiptData(fiscalData);
+        setShowFiscalReceiptModal(true);
+        toast.dismiss();
+        toast.success('QR Code processado com sucesso!');
       } else {
-        // Se não for um cupom fiscal MG, apenas use como número do documento
+        // Se não for um cupom fiscal reconhecido, use como número do documento
+        toast.dismiss();
+        console.log('QR Code não identificado como cupom fiscal, usando como número do documento');
         setFormData(prev => ({ ...prev, numero_documento: result }));
         toast.success('QR Code lido com sucesso!');
       }
     } catch (error) {
-      // Se não for uma URL válida, apenas use como número do documento
-      console.log('QR Code não é uma URL válida, usando como número do documento');
+      console.error('Erro ao processar QR code:', error);
+      toast.dismiss();
+      toast.error('Erro ao processar o QR code');
+      // Use o resultado como número do documento
       setFormData(prev => ({ ...prev, numero_documento: result }));
-      toast.success('QR Code lido com sucesso!');
+    } finally {
+      setIsProcessingQRCode(false);
     }
   };
 
