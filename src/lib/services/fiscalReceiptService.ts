@@ -20,6 +20,7 @@ export interface FiscalReceiptData {
     accessKey: string;
     totalValue: number;
     issueDate?: string;
+    serviceValue?: number; // Valor total do serviço
     items?: Array<{
       name: string;
       quantity: number;
@@ -262,165 +263,210 @@ export async function processFiscalReceiptQRCode(qrCodeText: string): Promise<Fi
           };
         }
         
-        return null;
+        throw new Error('HTML inválido ou muito curto');
       }
       
+      // Usar Cheerio para analisar o HTML e extrair os dados
       const $ = load(html);
       
-      // ==== BUSCA POR PADRÕES CONHECIDOS ====
-      
-      // ----- PADRÃO 1: Divs com títulos específicos -----
-      console.log('Tentando extração pelo padrão 1 (divs com títulos)...');
-      
-      // Extrair os dados do consumidor
-      let consumerName = $('div:contains("CONSUMIDOR")').next().find('div:contains("Nome / Razão Social:")').text().replace('Nome / Razão Social:', '').trim();
-      let consumerDocument = $('div:contains("CONSUMIDOR")').next().find('div:contains("CNPJ/CPF:")').text().replace('CNPJ/CPF:', '').trim();
-      let consumerState = $('div:contains("CONSUMIDOR")').next().find('div:contains("UF:")').text().replace('UF:', '').trim();
-      
-      // Extrair os dados do emitente
-      let issuerName = $('div:contains("EMITENTE")').next().find('div:contains("Nome / Razão Social:")').text().replace('Nome / Razão Social:', '').trim();
-      let issuerDocument = $('div:contains("EMITENTE")').next().find('div:contains("CNPJ:")').text().replace('CNPJ:', '').trim();
-      let issuerAddress = $('div:contains("EMITENTE")').next().find('div:contains("Endereço:")').text().replace('Endereço:', '').trim();
-      
-      // Extrair a chave de acesso
-      let accessKey = $('div:contains("CHAVE DE ACESSO")').next().text().trim();
-      
-      // Extrair o valor total
-      let totalValueText = $('div:contains("VALOR TOTAL R$")').next().text().trim();
-      let totalValue = 0;
+      // Tentar extrair o valor total do serviço e a data de emissão da aba "Informações Gerais da Nota"
+      let serviceValue = 0;
+      let issueDate = '';
       
       try {
-        totalValue = parseFloat(totalValueText.replace(/\./g, '').replace(',', '.')) || 0;
-      } catch (e) {
-        console.warn('Erro ao converter valor total:', e);
-      }
-      
-      // Extrair a data de emissão
-      let issueDateElement = $('div:contains("DATA DE EMISSÃO")').next();
-      let issueDate = issueDateElement.length ? issueDateElement.text().trim() : '';
-      
-      // ----- PADRÃO 2: Tabelas -----
-      console.log('Tentando extração pelo padrão 2 (tabelas)...');
-      if (!issuerName) {
-        // Procurando em tabelas
-        const tables = $('table');
-        tables.each((i, table) => {
-          const tableHtml = $(table).html() || '';
+        // Buscar pelo campo "Valor total do serviço"
+        $('td, th, div, span').each((i, el) => {
+          const text = $(el).text().trim();
           
-          if (tableHtml.includes('EMITENTE') || tableHtml.includes('CNPJ')) {
-            $(table).find('tr').each((j, row) => {
-              const rowText = $(row).text();
+          // Procurar pelo campo "Valor total do serviço" e seu valor adjacente
+          if (text.includes('Valor total do serviço') || text.includes('Valor Total dos Serviços')) {
+            console.log('Encontrado campo "Valor total do serviço"');
+            
+            // Pegar o próximo elemento que pode conter o valor
+            let valueElement = $(el).next();
+            let valueText = valueElement.text().trim();
+            
+            // Se não encontrou no próximo elemento, procurar em um elemento pai ou irmão
+            if (!valueText || !valueText.includes('R$')) {
+              // Tentar encontrar na mesma linha ou próximo elemento relevante
+              valueText = $(el).parent().text().trim();
               
-              if (rowText.includes('Nome / Razão Social:')) {
-                issuerName = rowText.replace('Nome / Razão Social:', '').trim();
-              } else if (rowText.includes('CNPJ:')) {
-                issuerDocument = rowText.replace('CNPJ:', '').trim();
-              } else if (rowText.includes('Endereço:')) {
-                issuerAddress = rowText.replace('Endereço:', '').trim();
-              } else if (rowText.includes('Chave de Acesso') || rowText.includes('CHAVE DE ACESSO')) {
-                accessKey = $(row).find('td').last().text().trim();
-              } else if (rowText.includes('VALOR TOTAL') || rowText.includes('Valor Total')) {
-                totalValueText = $(row).find('td').last().text().trim();
-                try {
-                  totalValue = parseFloat(totalValueText.replace(/[^\d,]/g, '').replace(',', '.'));
-                } catch (e) {
-                  console.warn('Erro ao converter valor total da tabela:', e);
-                }
-              } else if (rowText.includes('Data de Emissão') || rowText.includes('DATA DE EMISSÃO')) {
-                issueDate = $(row).find('td').last().text().trim();
+              // Extrair apenas a parte que contém R$
+              const valueMatch = valueText.match(/R\$\s*[\d.,]+/);
+              if (valueMatch) {
+                valueText = valueMatch[0];
               }
-            });
+            }
+            
+            console.log('Texto do valor encontrado:', valueText);
+            
+            // Extrair apenas os números do valor
+            if (valueText) {
+              const numericValue = valueText.replace(/[^\d,]/g, '').replace(',', '.');
+              if (numericValue) {
+                serviceValue = parseFloat(numericValue);
+                console.log('Valor total do serviço extraído:', serviceValue);
+              }
+            }
+          }
+          
+          // Procurar pela data de emissão
+          if (text.includes('Data Emissão') || text.includes('Data de Emissão')) {
+            console.log('Encontrado campo "Data Emissão"');
+            
+            // Pegar o próximo elemento que pode conter a data
+            let dateElement = $(el).next();
+            let dateText = dateElement.text().trim();
+            
+            // Se não encontrou no próximo elemento, procurar em um elemento pai ou irmão
+            if (!dateText || !/\d{2}\/\d{2}\/\d{4}/.test(dateText)) {
+              // Tentar encontrar na mesma linha ou próximo elemento relevante
+              dateText = $(el).parent().text().trim();
+              
+              // Extrair apenas a parte que parece ser uma data
+              const dateMatch = dateText.match(/\d{2}\/\d{2}\/\d{4}/);
+              if (dateMatch) {
+                dateText = dateMatch[0];
+              }
+            }
+            
+            console.log('Texto da data encontrado:', dateText);
+            
+            if (dateText) {
+              issueDate = dateText;
+              console.log('Data de emissão extraída:', issueDate);
+            }
           }
         });
+      } catch (extractionError) {
+        console.error('Erro ao extrair valor do serviço ou data de emissão:', extractionError);
       }
       
-      // ----- PADRÃO 3: Busca genérica por textos -----
-      console.log('Tentando extração pelo padrão 3 (busca por textos)...');
-      if (!accessKey) {
-        // Procurar por chave de acesso em todo o HTML
-        const keyRegex = /\b\d{44}\b/g;
-        const keyMatches = html.match(keyRegex);
-        if (keyMatches && keyMatches.length > 0) {
-          accessKey = keyMatches[0];
-          console.log('Chave de acesso encontrada por regex:', accessKey);
-        }
-      }
+      // Extrair dados do cupom, seguindo a estrutura da interface FiscalReceiptData
       
-      if (!totalValue) {
-        // Procurar por padrões de valor total
-        const valueRegex = /(?:valor\s+total|total)[^\d]*(R\$\s*)?[^\d]*(\d+(?:[,.]\d{1,2})?)/i;
-        const valueMatch = html.match(valueRegex);
-        if (valueMatch && valueMatch[2]) {
-          try {
-            totalValue = parseFloat(valueMatch[2].replace('.', '').replace(',', '.'));
-            console.log('Valor total encontrado por regex:', totalValue);
-          } catch (e) {
-            console.warn('Erro ao converter valor total do regex:', e);
-          }
-        }
-      }
-      
-      // Usar valores padrão para campos vazios
-      consumerName = consumerName || 'CONSUMIDOR NÃO IDENTIFICADO';
-      consumerDocument = consumerDocument || 'NÃO INFORMADO';
-      consumerState = consumerState || 'MG';
-      issuerName = issuerName || 'ESTABELECIMENTO NÃO IDENTIFICADO';
-      issuerDocument = issuerDocument || 'NÃO INFORMADO';
-      
-      // Verificar campos obrigatórios
-      if (!accessKey) {
-        console.error('Não foi possível extrair a chave de acesso da página');
-        
-        // Usar a chave extraída da URL se disponível
-        if (accessKeyFromUrl) {
-          accessKey = accessKeyFromUrl;
-          console.log('Usando chave de acesso extraída da URL:', accessKey);
-        } else {
-          // Último recurso: tentar extrair a chave de acesso da URL
-          const urlKeyRegex = /[?&]p=([A-Za-z0-9|]+)/;
-          const urlKeyMatch = qrCodeText.match(urlKeyRegex);
-          if (urlKeyMatch && urlKeyMatch[1]) {
-            accessKey = urlKeyMatch[1];
-            console.log('Chave de acesso extraída da URL:', accessKey);
-          } else {
-            throw new Error('Não foi possível extrair a chave de acesso');
-          }
-        }
-      }
-      
-      console.log('Dados extraídos:');
-      console.log('- Emitente:', issuerName);
-      console.log('- CNPJ:', issuerDocument);
-      console.log('- Chave:', accessKey?.substr(0, 10) + '...');
-      console.log('- Valor:', totalValue);
-      console.log('- Data de Emissão:', issueDate);
-      
-      // Estruturar os dados do cupom fiscal
-      const fiscalReceiptData: FiscalReceiptData = {
+      let fiscalData: FiscalReceiptData = {
         consumer: {
-          name: consumerName,
-          documentNumber: consumerDocument,
-          state: consumerState
+          name: 'CONSUMIDOR NÃO IDENTIFICADO',
+          documentNumber: 'NÃO INFORMADO',
+          state: 'MG'
         },
         issuer: {
-          name: issuerName,
-          documentNumber: issuerDocument,
-          address: issuerAddress
+          name: 'ESTABELECIMENTO NÃO IDENTIFICADO',
+          documentNumber: 'NÃO INFORMADO'
         },
         receipt: {
-          accessKey: accessKey || accessKeyFromUrl,
-          totalValue,
-          issueDate
+          accessKey: accessKeyFromUrl || '',
+          totalValue: 0,
+          serviceValue: serviceValue, // Adicionar o valor do serviço extraído
+          issueDate: issueDate // Adicionar a data de emissão extraída
         },
         qrCodeUrl: qrCodeText
       };
       
-      return fiscalReceiptData;
+      // Extrair dados do emissor (estabelecimento)
+      try {
+        // Tentar encontrar o nome do emissor/estabelecimento
+        let issuerName = '';
+        $('th:contains("IDENTIFICAÇÃO DO EMITENTE"), div:contains("DADOS DO EMITENTE")').closest('table, div').find('td, div').each((i, el) => {
+          const text = $(el).text().trim();
+          if (text && !text.includes('IDENTIFICAÇÃO') && !text.includes('DADOS') && text.length > 5) {
+            if (!issuerName) {
+              issuerName = text;
+              console.log('Nome do emitente:', issuerName);
+            }
+          }
+        });
+        
+        // Se não foi encontrado pelo método anterior, tentar outra abordagem
+        if (!issuerName) {
+          $('div.text-upper').each((i, el) => {
+            const text = $(el).text().trim();
+            if (text && text.length > 5 && !issuerName) {
+              issuerName = text;
+              console.log('Nome do emitente (método alternativo):', issuerName);
+            }
+          });
+        }
+        
+        if (issuerName) {
+          fiscalData.issuer.name = issuerName;
+        }
+        
+        // Tentar extrair CNPJ/CPF do emissor
+        $('div:contains("CNPJ:"), span:contains("CNPJ:")').each((i, el) => {
+          const text = $(el).text().trim();
+          const cnpjMatch = text.match(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/);
+          if (cnpjMatch) {
+            fiscalData.issuer.documentNumber = cnpjMatch[0];
+            console.log('CNPJ do emitente:', fiscalData.issuer.documentNumber);
+          }
+        });
+      } catch (error) {
+        console.error('Erro ao extrair dados do emissor:', error);
+      }
+      
+      // Extrair valor total da nota
+      try {
+        // Primeiro verificar se já temos o valor do serviço, se sim, usamos ele
+        if (serviceValue > 0) {
+          fiscalData.receipt.totalValue = serviceValue;
+          console.log('Usando valor do serviço como valor total:', serviceValue);
+        } else {
+          // Caso contrário, tentar extrair pelos métodos tradicionais
+          $('div:contains("Valor total da NF-e:"), span:contains("Valor total R$"), th:contains("VALOR TOTAL"), div:contains("Valor a Pagar R$")').each((i, el) => {
+            const parentText = $(el).parent().text().trim();
+            const valueMatch = parentText.match(/R\$\s*([\d.,]+)/);
+            
+            if (valueMatch && valueMatch[1]) {
+              // Converter para número considerando formato brasileiro (vírgula como separador decimal)
+              const valueStr = valueMatch[1].replace('.', '').replace(',', '.');
+              fiscalData.receipt.totalValue = parseFloat(valueStr);
+              console.log('Valor total extraído:', fiscalData.receipt.totalValue);
+            }
+          });
+          
+          // Se ainda não encontrou, procurar na página inteira
+          if (!fiscalData.receipt.totalValue) {
+            const totalValueRegex = /Valor (?:Total|total|a Pagar)[^R]*R\$\s*([\d.,]+)/;
+            const pageText = $('body').text();
+            const matches = pageText.match(totalValueRegex);
+            
+            if (matches && matches[1]) {
+              const valueStr = matches[1].replace('.', '').replace(',', '.');
+              fiscalData.receipt.totalValue = parseFloat(valueStr);
+              console.log('Valor total extraído (método alternativo):', fiscalData.receipt.totalValue);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Erro ao extrair valor total:', error);
+      }
+      
+      // Extrair a data de emissão se ainda não temos
+      if (!fiscalData.receipt.issueDate) {
+        try {
+          // Procurar por padrões de data
+          $('div:contains("Data de Emissão:"), span:contains("Data de Emissão")').each((i, el) => {
+            const parentText = $(el).parent().text().trim();
+            
+            // Formato DD/MM/AAAA
+            const dateMatch = parentText.match(/\d{2}\/\d{2}\/\d{4}/);
+            if (dateMatch) {
+              fiscalData.receipt.issueDate = dateMatch[0];
+              console.log('Data de emissão extraída:', fiscalData.receipt.issueDate);
+            }
+          });
+        } catch (error) {
+          console.error('Erro ao extrair data de emissão:', error);
+        }
+      }
+      
+      return fiscalData;
+      
     } catch (fetchError) {
-      clearTimeout(timeoutId);
       console.error('Erro ao buscar a página do cupom fiscal:', fetchError);
       
-      // Se temos a chave de acesso da URL, ainda podemos retornar um objeto mínimo
+      // Se temos a chave de acesso, podemos retornar um objeto mínimo mesmo com erro de fetch
       if (accessKeyFromUrl) {
         return {
           consumer: {
@@ -443,7 +489,7 @@ export async function processFiscalReceiptQRCode(qrCodeText: string): Promise<Fi
       throw fetchError;
     }
   } catch (error) {
-    console.error('Erro ao processar QR Code do cupom fiscal:', error);
+    console.error('Erro ao processar QR code do cupom fiscal:', error);
     return null;
   }
 }

@@ -232,11 +232,21 @@ export default function CadastrarDocumento() {
         // Se o tipo de documento for cupom_fiscal, preencher os campos automaticamente
         if (formData.tipo === 'cupom_fiscal') {
           console.log('Preenchendo campos do formulário automaticamente');
+          
+          // Determinar qual valor usar (serviceValue ou totalValue)
+          const valorParaUsar = fiscalData.receipt.serviceValue !== undefined && fiscalData.receipt.serviceValue > 0 
+            ? fiscalData.receipt.serviceValue 
+            : fiscalData.receipt.totalValue;
+          
+          console.log('Valor a ser usado:', valorParaUsar, 
+                     'serviceValue:', fiscalData.receipt.serviceValue,
+                     'totalValue:', fiscalData.receipt.totalValue);
+          
           setFormData(prev => ({
             ...prev,
             numero_documento: fiscalData.receipt.accessKey || prev.numero_documento,
             data_emissao: fiscalData.receipt.issueDate || prev.data_emissao,
-            valor: fiscalData.receipt.totalValue ? fiscalData.receipt.totalValue.toLocaleString('pt-BR', {
+            valor: valorParaUsar ? valorParaUsar.toLocaleString('pt-BR', {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2
             }) : prev.valor

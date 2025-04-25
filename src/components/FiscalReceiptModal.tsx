@@ -81,15 +81,23 @@ export default function FiscalReceiptModal({ data, onClose, onConfirm }: FiscalR
       doc.setFontSize(12);
       doc.text('Dados do Cupom Fiscal', 14, finalY2 + 10);
       
+      // Preparar os dados da nota com ou sem o valor do serviço
+      const notaBody = [
+        ['Chave de Acesso', data.receipt.accessKey || 'Não informado'],
+        ['Valor Total', `R$ ${data.receipt.totalValue.toFixed(2).replace('.', ',')}` || 'R$ 0,00'],
+        ['Data de Emissão', data.receipt.issueDate || 'Não informado'],
+      ];
+      
+      // Adicionar valor do serviço se estiver disponível
+      if (data.receipt.serviceValue !== undefined) {
+        notaBody.push(['Valor Total do Serviço', `R$ ${data.receipt.serviceValue.toFixed(2).replace('.', ',')}` || 'R$ 0,00']);
+      }
+      
       // Tabela com dados da nota fiscal
       doc.autoTable({
         startY: finalY2 + 15,
         head: [['Campo', 'Valor']],
-        body: [
-          ['Chave de Acesso', data.receipt.accessKey || 'Não informado'],
-          ['Valor Total', `R$ ${data.receipt.totalValue.toFixed(2).replace('.', ',')}` || 'R$ 0,00'],
-          ['Data de Emissão', data.receipt.issueDate || 'Não informado'],
-        ],
+        body: notaBody,
         theme: 'grid',
         headStyles: { fillColor: [41, 128, 185] },
       });
@@ -193,6 +201,14 @@ export default function FiscalReceiptModal({ data, onClose, onConfirm }: FiscalR
                   R$ {data.receipt.totalValue.toFixed(2).replace('.', ',')}
                 </p>
               </div>
+              {data.receipt.serviceValue !== undefined && (
+                <div>
+                  <p className="text-sm text-gray-500">Valor Total do Serviço</p>
+                  <p className="font-medium text-green-600">
+                    R$ {data.receipt.serviceValue.toFixed(2).replace('.', ',')}
+                  </p>
+                </div>
+              )}
               <div>
                 <p className="text-sm text-gray-500">Data de Emissão</p>
                 <p className="font-medium">{data.receipt.issueDate || 'Não informado'}</p>
