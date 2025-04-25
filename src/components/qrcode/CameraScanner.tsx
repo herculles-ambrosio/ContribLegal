@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Html5Qrcode, Html5QrcodeScannerState, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import { Html5Qrcode, Html5QrcodeScannerState, Html5QrcodeSupportedFormats, Html5QrcodeScanType } from 'html5-qrcode';
 import Button from '../ui/Button';
 import { FaCamera, FaExchangeAlt, FaSync } from 'react-icons/fa';
 
@@ -22,6 +22,7 @@ export default function CameraScanner({ onScanSuccess, onError }: CameraScannerP
 
   // Inicializa o scanner
   useEffect(() => {
+    // Configurações otimizadas para o scanner de QR code
     const qrCodeScanner = new Html5Qrcode('qrcode-reader', {
       formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
       verbose: false
@@ -37,13 +38,25 @@ export default function CameraScanner({ onScanSuccess, onError }: CameraScannerP
         const devices = await Html5Qrcode.getCameras();
         
         if (devices && devices.length > 0) {
+          // Priorizar câmera traseira para melhor leitura de QR code
+          const rearCamera = devices.find(device => 
+            device.label.toLowerCase().includes('back') || 
+            device.label.toLowerCase().includes('traseira') ||
+            device.label.toLowerCase().includes('rear'));
+          
           const availableCameras = devices.map(device => ({
             id: device.id,
             label: device.label || `Câmera ${device.id}`
           }));
           
           setCameras(availableCameras);
-          setSelectedCamera(availableCameras[0].id);
+          
+          // Se encontrar uma câmera traseira, use-a; caso contrário, use a primeira
+          if (rearCamera) {
+            setSelectedCamera(rearCamera.id);
+          } else {
+            setSelectedCamera(availableCameras[0].id);
+          }
         } else {
           const errorMsg = 'Nenhuma câmera encontrada no dispositivo.';
           setError(errorMsg);
@@ -76,6 +89,30 @@ export default function CameraScanner({ onScanSuccess, onError }: CameraScannerP
       startScanner();
     }
   }, [isInitializing, selectedCamera, scannerStarted]);
+  
+  // Pré-processa o link do QR Code para garantir que seja válido
+  const preprocessQrResult = (decodedText: string): string => {
+    // Verifica se o texto já é uma URL
+    if (decodedText.startsWith('http://') || decodedText.startsWith('https://')) {
+      return decodedText;
+    }
+    
+    // Se for apenas números (44 dígitos = chave de acesso), pode ser tratado diretamente
+    if (/^\d{44}$/.test(decodedText)) {
+      return decodedText;
+    }
+    
+    // Verifica se é um QR code com parâmetros
+    if (decodedText.includes('?') || decodedText.includes('&')) {
+      // Tenta extrair uma URL válida
+      const urlMatch = decodedText.match(/(https?:\/\/[^\s]+)/i);
+      if (urlMatch) {
+        return urlMatch[0];
+      }
+    }
+    
+    return decodedText;
+  };
 
   const startScanner = async () => {
     if (!selectedCamera || !html5QrCodeRef.current) return;
@@ -84,16 +121,23 @@ export default function CameraScanner({ onScanSuccess, onError }: CameraScannerP
       setError(null);
       setScannerStarted(true);
       
+      // Configurações otimizadas para melhor desempenho
       const config = {
-        fps: 10,
-        qrbox: { width: 250, height: 250 },
-        aspectRatio: 1.0
+        fps: 15, // Aumentado para melhor desempenho
+        qrbox: { width: 300, height: 300 }, // Área de escaneamento maior
+        aspectRatio: 1.0,
+        disableFlip: false, // Permitir virar a imagem
+        experimentalFeatures: {
+          useBarCodeDetectorIfSupported: true // Usar detector de código de barras nativo se disponível
+        },
+        rememberLastUsedCamera: true,
+        supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA]
       };
       
       await html5QrCodeRef.current.start(
         selectedCamera,
         config,
-        handleScanSuccess,
+        (decodedText) => handleScanSuccess(preprocessQrResult(decodedText)),
         handleScanFailure
       );
     } catch (err) {
@@ -106,6 +150,8 @@ export default function CameraScanner({ onScanSuccess, onError }: CameraScannerP
   };
 
   const handleScanSuccess = (decodedText: string) => {
+    console.log('QR Code lido com sucesso:', decodedText);
+    
     if (html5QrCodeRef.current) {
       html5QrCodeRef.current.stop()
         .then(() => {
@@ -136,13 +182,24 @@ export default function CameraScanner({ onScanSuccess, onError }: CameraScannerP
       const devices = await Html5Qrcode.getCameras();
       
       if (devices && devices.length > 0) {
+        const rearCamera = devices.find(device => 
+          device.label.toLowerCase().includes('back') || 
+          device.label.toLowerCase().includes('traseira') ||
+          device.label.toLowerCase().includes('rear'));
+          
         const availableCameras = devices.map(device => ({
           id: device.id,
           label: device.label || `Câmera ${device.id}`
         }));
         
         setCameras(availableCameras);
-        setSelectedCamera(availableCameras[0].id);
+        
+        // Se encontrar uma câmera traseira, use-a; caso contrário, use a primeira
+        if (rearCamera) {
+          setSelectedCamera(rearCamera.id);
+        } else {
+          setSelectedCamera(availableCameras[0].id);
+        }
       } else {
         const errorMsg = 'Nenhuma câmera encontrada no dispositivo.';
         setError(errorMsg);
@@ -180,7 +237,7 @@ export default function CameraScanner({ onScanSuccess, onError }: CameraScannerP
       <div 
         id="qrcode-reader" 
         ref={scannerContainerRef}
-        className="w-full max-w-sm h-64 bg-gray-100 relative rounded-lg overflow-hidden"
+        className="w-full max-w-sm h-72 bg-gray-100 relative rounded-lg overflow-hidden"
       >
         {isInitializing && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-200">
@@ -204,6 +261,12 @@ export default function CameraScanner({ onScanSuccess, onError }: CameraScannerP
                 <FaSync size={14} /> Tentar novamente
               </Button>
             </div>
+          </div>
+        )}
+        
+        {!isInitializing && !error && scannerStarted && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="w-48 h-48 border-2 border-dashed border-blue-500 rounded-lg"></div>
           </div>
         )}
       </div>

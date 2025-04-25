@@ -144,21 +144,62 @@ export async function processFiscalReceiptQRCode(qrCodeText: string): Promise<Fi
   try {
     console.log('Processando QR Code:', qrCodeText);
     
-    // Verificar se o texto contém uma URL válida
-    let qrUrl = qrCodeText;
-    
-    // Extrair a chave de acesso do QR Code (primeiros 44 dígitos após p=)
+    // Extrair a chave de acesso do QR Code
     const accessKeyFromUrl = extractAccessKeyFromQRCode(qrCodeText);
+    console.log('Chave de acesso extraída:', accessKeyFromUrl);
     
-    // Se o texto não parece ser uma URL, tentamos tratar como uma chave de acesso
-    if (!qrCodeText.startsWith('http')) {
-      console.log('QR Code não é uma URL. Tentando tratar como chave de acesso...');
+    // Identificar se é uma URL ou chave direta
+    const isUrl = qrCodeText.startsWith('http');
+    
+    // Processar dados apenas a partir da URL, sem fetch
+    if (isUrl) {
+      console.log('Processando dados da URL sem fazer fetch');
+      
+      // Verificar se o texto contém uma URL válida do portal da SEFAZ
+      const isSefaz = qrCodeText.includes('portalsped.fazenda') || 
+                     qrCodeText.includes('fazenda.mg.gov.br') || 
+                     qrCodeText.includes('fazenda.gov.br') || 
+                     qrCodeText.includes('sefaz') || 
+                     qrCodeText.includes('nfce');
+      
+      if (!isSefaz) {
+        console.warn('URL não parece ser de um portal da SEFAZ:', qrCodeText);
+      }
+      
+      // Tentar extrair a data da emissão e valor da URL, se presentes
+      let issueDate = extractDateFromUrl(qrCodeText);
+      let totalValue = extractValueFromUrl(qrCodeText);
+      
+      // Retornar estrutura básica com os dados extraídos
+      return {
+        consumer: {
+          name: 'CONSUMIDOR NÃO IDENTIFICADO',
+          documentNumber: 'NÃO INFORMADO',
+          state: 'MG'
+        },
+        issuer: {
+          name: 'ESTABELECIMENTO COMERCIAL',
+          documentNumber: 'NÃO INFORMADO'
+        },
+        receipt: {
+          accessKey: accessKeyFromUrl || 'NÃO IDENTIFICADO',
+          totalValue: totalValue || 0,
+          issueDate: issueDate || formatCurrentDate()
+        },
+        qrCodeUrl: qrCodeText
+      };
+    } else {
+      // Se não é URL, deve ser a própria chave de acesso
+      console.log('QR Code não é uma URL. Tratando como chave de acesso direta.');
       
       // Extrair apenas números e caracteres do QR code (caso seja uma chave de acesso)
       const keyPattern = qrCodeText.replace(/[^A-Za-z0-9]/g, '');
       
       if (keyPattern.length >= 30) {
         console.log('Detectada possível chave de acesso:', keyPattern);
+        // Usar a chave extraída ou a que foi processada diretamente
+        const finalKey = accessKeyFromUrl || keyPattern;
+        
         // Retornamos dados básicos com a chave de acesso
         return {
           consumer: {
@@ -167,12 +208,13 @@ export async function processFiscalReceiptQRCode(qrCodeText: string): Promise<Fi
             state: 'MG'
           },
           issuer: {
-            name: 'NÃO IDENTIFICADO',
+            name: 'ESTABELECIMENTO COMERCIAL',
             documentNumber: 'NÃO INFORMADO'
           },
           receipt: {
-            accessKey: keyPattern,
+            accessKey: finalKey,
             totalValue: 0,
+            issueDate: formatCurrentDate()
           },
           qrCodeUrl: qrCodeText
         };
@@ -181,317 +223,124 @@ export async function processFiscalReceiptQRCode(qrCodeText: string): Promise<Fi
         return null;
       }
     }
+  } catch (error) {
+    console.error('Erro ao processar QR code:', error);
     
-    // Verificar se o texto contém uma URL válida do portal da SEFAZ
-    const isSefaz = qrCodeText.includes('portalsped.fazenda') || 
-                   qrCodeText.includes('fazenda.mg.gov.br') ||
-                   qrCodeText.includes('fazenda.gov.br') ||
-                   qrCodeText.includes('sefaz') ||
-                   qrCodeText.includes('nfce');
-    
-    if (!isSefaz) {
-      console.warn('URL não parece ser de um portal da SEFAZ:', qrCodeText);
-      // Ainda tentaremos processar, mas com baixa expectativa
-    }
-
-    console.log('Buscando página do cupom fiscal...');
-    
-    // Configurar timeout mais curto para evitar espera longa
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 segundos de timeout
-    
-    try {
-      // Usar a URL para obter o HTML da página do cupom fiscal
-      const response = await fetch(qrCodeText, {
-        signal: controller.signal,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
-      });
-      
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        console.error(`Falha ao obter dados do cupom fiscal. Status: ${response.status}`);
-        
-        // Se temos a chave de acesso da URL, ainda podemos retornar um objeto mínimo
-        if (accessKeyFromUrl) {
-          return {
-            consumer: {
-              name: 'CONSUMIDOR NÃO IDENTIFICADO',
-              documentNumber: 'NÃO INFORMADO',
-              state: 'MG'
-            },
-            issuer: {
-              name: 'ESTABELECIMENTO NÃO IDENTIFICADO',
-              documentNumber: 'NÃO INFORMADO'
-            },
-            receipt: {
-              accessKey: accessKeyFromUrl,
-              totalValue: 0
-            },
-            qrCodeUrl: qrCodeText
-          };
-        }
-        
-        throw new Error(`Falha ao obter dados do cupom fiscal: ${response.statusText}`);
-      }
-
-      const html = await response.text();
-      console.log('HTML recebido, tamanho:', html.length);
-      
-      if (html.length < 100) {
-        console.error('HTML muito curto, provavelmente resposta inválida');
-        
-        // Se temos a chave de acesso da URL, ainda podemos retornar um objeto mínimo
-        if (accessKeyFromUrl) {
-          return {
-            consumer: {
-              name: 'CONSUMIDOR NÃO IDENTIFICADO',
-              documentNumber: 'NÃO INFORMADO',
-              state: 'MG'
-            },
-            issuer: {
-              name: 'ESTABELECIMENTO NÃO IDENTIFICADO',
-              documentNumber: 'NÃO INFORMADO'
-            },
-            receipt: {
-              accessKey: accessKeyFromUrl,
-              totalValue: 0
-            },
-            qrCodeUrl: qrCodeText
-          };
-        }
-        
-        throw new Error('HTML inválido ou muito curto');
-      }
-      
-      // Usar Cheerio para analisar o HTML e extrair os dados
-      const $ = load(html);
-      
-      // Tentar extrair o valor total do serviço e a data de emissão da aba "Informações Gerais da Nota"
-      let serviceValue = 0;
-      let issueDate = '';
-      
-      try {
-        // Buscar pelo campo "Valor total do serviço"
-        $('td, th, div, span').each((i, el) => {
-          const text = $(el).text().trim();
-          
-          // Procurar pelo campo "Valor total do serviço" e seu valor adjacente
-          if (text.includes('Valor total do serviço') || text.includes('Valor Total dos Serviços')) {
-            console.log('Encontrado campo "Valor total do serviço"');
-            
-            // Pegar o próximo elemento que pode conter o valor
-            let valueElement = $(el).next();
-            let valueText = valueElement.text().trim();
-            
-            // Se não encontrou no próximo elemento, procurar em um elemento pai ou irmão
-            if (!valueText || !valueText.includes('R$')) {
-              // Tentar encontrar na mesma linha ou próximo elemento relevante
-              valueText = $(el).parent().text().trim();
-              
-              // Extrair apenas a parte que contém R$
-              const valueMatch = valueText.match(/R\$\s*[\d.,]+/);
-              if (valueMatch) {
-                valueText = valueMatch[0];
-              }
-            }
-            
-            console.log('Texto do valor encontrado:', valueText);
-            
-            // Extrair apenas os números do valor
-            if (valueText) {
-              const numericValue = valueText.replace(/[^\d,]/g, '').replace(',', '.');
-              if (numericValue) {
-                serviceValue = parseFloat(numericValue);
-                console.log('Valor total do serviço extraído:', serviceValue);
-              }
-            }
-          }
-          
-          // Procurar pela data de emissão
-          if (text.includes('Data Emissão') || text.includes('Data de Emissão')) {
-            console.log('Encontrado campo "Data Emissão"');
-            
-            // Pegar o próximo elemento que pode conter a data
-            let dateElement = $(el).next();
-            let dateText = dateElement.text().trim();
-            
-            // Se não encontrou no próximo elemento, procurar em um elemento pai ou irmão
-            if (!dateText || !/\d{2}\/\d{2}\/\d{4}/.test(dateText)) {
-              // Tentar encontrar na mesma linha ou próximo elemento relevante
-              dateText = $(el).parent().text().trim();
-              
-              // Extrair apenas a parte que parece ser uma data
-              const dateMatch = dateText.match(/\d{2}\/\d{2}\/\d{4}/);
-              if (dateMatch) {
-                dateText = dateMatch[0];
-              }
-            }
-            
-            console.log('Texto da data encontrado:', dateText);
-            
-            if (dateText) {
-              issueDate = dateText;
-              console.log('Data de emissão extraída:', issueDate);
-            }
-          }
-        });
-      } catch (extractionError) {
-        console.error('Erro ao extrair valor do serviço ou data de emissão:', extractionError);
-      }
-      
-      // Extrair dados do cupom, seguindo a estrutura da interface FiscalReceiptData
-      
-      let fiscalData: FiscalReceiptData = {
+    // Em caso de erro, tenta retornar pelo menos a chave de acesso
+    const accessKey = extractAccessKeyFromQRCode(qrCodeText);
+    if (accessKey) {
+      return {
         consumer: {
           name: 'CONSUMIDOR NÃO IDENTIFICADO',
           documentNumber: 'NÃO INFORMADO',
           state: 'MG'
         },
         issuer: {
-          name: 'ESTABELECIMENTO NÃO IDENTIFICADO',
+          name: 'ESTABELECIMENTO COMERCIAL',
           documentNumber: 'NÃO INFORMADO'
         },
         receipt: {
-          accessKey: accessKeyFromUrl || '',
+          accessKey: accessKey,
           totalValue: 0,
-          serviceValue: serviceValue, // Adicionar o valor do serviço extraído
-          issueDate: issueDate // Adicionar a data de emissão extraída
+          issueDate: formatCurrentDate()
         },
         qrCodeUrl: qrCodeText
       };
-      
-      // Extrair dados do emissor (estabelecimento)
-      try {
-        // Tentar encontrar o nome do emissor/estabelecimento
-        let issuerName = '';
-        $('th:contains("IDENTIFICAÇÃO DO EMITENTE"), div:contains("DADOS DO EMITENTE")').closest('table, div').find('td, div').each((i, el) => {
-          const text = $(el).text().trim();
-          if (text && !text.includes('IDENTIFICAÇÃO') && !text.includes('DADOS') && text.length > 5) {
-            if (!issuerName) {
-              issuerName = text;
-              console.log('Nome do emitente:', issuerName);
-            }
-          }
-        });
-        
-        // Se não foi encontrado pelo método anterior, tentar outra abordagem
-        if (!issuerName) {
-          $('div.text-upper').each((i, el) => {
-            const text = $(el).text().trim();
-            if (text && text.length > 5 && !issuerName) {
-              issuerName = text;
-              console.log('Nome do emitente (método alternativo):', issuerName);
-            }
-          });
-        }
-        
-        if (issuerName) {
-          fiscalData.issuer.name = issuerName;
-        }
-        
-        // Tentar extrair CNPJ/CPF do emissor
-        $('div:contains("CNPJ:"), span:contains("CNPJ:")').each((i, el) => {
-          const text = $(el).text().trim();
-          const cnpjMatch = text.match(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/);
-          if (cnpjMatch) {
-            fiscalData.issuer.documentNumber = cnpjMatch[0];
-            console.log('CNPJ do emitente:', fiscalData.issuer.documentNumber);
-          }
-        });
-      } catch (error) {
-        console.error('Erro ao extrair dados do emissor:', error);
-      }
-      
-      // Extrair valor total da nota
-      try {
-        // Primeiro verificar se já temos o valor do serviço, se sim, usamos ele
-        if (serviceValue > 0) {
-          fiscalData.receipt.totalValue = serviceValue;
-          console.log('Usando valor do serviço como valor total:', serviceValue);
-        } else {
-          // Caso contrário, tentar extrair pelos métodos tradicionais
-          $('div:contains("Valor total da NF-e:"), span:contains("Valor total R$"), th:contains("VALOR TOTAL"), div:contains("Valor a Pagar R$")').each((i, el) => {
-            const parentText = $(el).parent().text().trim();
-            const valueMatch = parentText.match(/R\$\s*([\d.,]+)/);
-            
-            if (valueMatch && valueMatch[1]) {
-              // Converter para número considerando formato brasileiro (vírgula como separador decimal)
-              const valueStr = valueMatch[1].replace('.', '').replace(',', '.');
-              fiscalData.receipt.totalValue = parseFloat(valueStr);
-              console.log('Valor total extraído:', fiscalData.receipt.totalValue);
-            }
-          });
-          
-          // Se ainda não encontrou, procurar na página inteira
-          if (!fiscalData.receipt.totalValue) {
-            const totalValueRegex = /Valor (?:Total|total|a Pagar)[^R]*R\$\s*([\d.,]+)/;
-            const pageText = $('body').text();
-            const matches = pageText.match(totalValueRegex);
-            
-            if (matches && matches[1]) {
-              const valueStr = matches[1].replace('.', '').replace(',', '.');
-              fiscalData.receipt.totalValue = parseFloat(valueStr);
-              console.log('Valor total extraído (método alternativo):', fiscalData.receipt.totalValue);
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Erro ao extrair valor total:', error);
-      }
-      
-      // Extrair a data de emissão se ainda não temos
-      if (!fiscalData.receipt.issueDate) {
-        try {
-          // Procurar por padrões de data
-          $('div:contains("Data de Emissão:"), span:contains("Data de Emissão")').each((i, el) => {
-            const parentText = $(el).parent().text().trim();
-            
-            // Formato DD/MM/AAAA
-            const dateMatch = parentText.match(/\d{2}\/\d{2}\/\d{4}/);
-            if (dateMatch) {
-              fiscalData.receipt.issueDate = dateMatch[0];
-              console.log('Data de emissão extraída:', fiscalData.receipt.issueDate);
-            }
-          });
-        } catch (error) {
-          console.error('Erro ao extrair data de emissão:', error);
-        }
-      }
-      
-      return fiscalData;
-      
-    } catch (fetchError) {
-      console.error('Erro ao buscar a página do cupom fiscal:', fetchError);
-      
-      // Se temos a chave de acesso, podemos retornar um objeto mínimo mesmo com erro de fetch
-      if (accessKeyFromUrl) {
-        return {
-          consumer: {
-            name: 'CONSUMIDOR NÃO IDENTIFICADO',
-            documentNumber: 'NÃO INFORMADO',
-            state: 'MG'
-          },
-          issuer: {
-            name: 'ESTABELECIMENTO NÃO IDENTIFICADO',
-            documentNumber: 'NÃO INFORMADO'
-          },
-          receipt: {
-            accessKey: accessKeyFromUrl,
-            totalValue: 0
-          },
-          qrCodeUrl: qrCodeText
-        };
-      }
-      
-      throw fetchError;
     }
-  } catch (error) {
-    console.error('Erro ao processar QR code do cupom fiscal:', error);
+    
     return null;
   }
+}
+
+/**
+ * Tenta extrair uma data de uma URL
+ * @param url URL que pode conter parâmetros de data
+ * @returns Data no formato YYYY-MM-DD ou vazio
+ */
+function extractDateFromUrl(url: string): string {
+  try {
+    // Procurar por padrões de data em parâmetros
+    // Ex: dEmi=20240401 ou data=01/04/2024 ou dhEmi=20240401T120000
+    const dateParams = ['dEmi', 'data', 'dhEmi', 'date', 'dt'];
+    
+    // Verificar cada parâmetro possível
+    for (const param of dateParams) {
+      const regex = new RegExp(`[?&]${param}=([^&]*)`, 'i');
+      const match = url.match(regex);
+      
+      if (match && match[1]) {
+        const dateValue = match[1];
+        
+        // Formato YYYYMMDD
+        if (/^\d{8}/.test(dateValue)) {
+          const year = dateValue.substring(0, 4);
+          const month = dateValue.substring(4, 6);
+          const day = dateValue.substring(6, 8);
+          return `${year}-${month}-${day}`;
+        }
+        
+        // Formato DD/MM/YYYY
+        if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(dateValue)) {
+          const parts = dateValue.split('/');
+          return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+      }
+    }
+    
+    // Se não encontrou nenhuma data, retorna vazio
+    return '';
+  } catch (error) {
+    console.error('Erro ao extrair data da URL:', error);
+    return '';
+  }
+}
+
+/**
+ * Tenta extrair um valor monetário de uma URL
+ * @param url URL que pode conter parâmetros de valor
+ * @returns Valor numérico ou zero
+ */
+function extractValueFromUrl(url: string): number {
+  try {
+    // Procurar por padrões de valor em parâmetros
+    // Ex: vNF=100.00 ou valor=100,00 ou vProd=100
+    const valueParams = ['vNF', 'valor', 'vProd', 'vServ', 'value', 'val'];
+    
+    // Verificar cada parâmetro possível
+    for (const param of valueParams) {
+      const regex = new RegExp(`[?&]${param}=([^&]*)`, 'i');
+      const match = url.match(regex);
+      
+      if (match && match[1]) {
+        const valueString = match[1];
+        
+        // Converter para número (tratando tanto ponto quanto vírgula)
+        const numericValue = valueString.replace(',', '.');
+        const value = parseFloat(numericValue);
+        
+        if (!isNaN(value)) {
+          return value;
+        }
+      }
+    }
+    
+    // Se não encontrou nenhum valor, retorna zero
+    return 0;
+  } catch (error) {
+    console.error('Erro ao extrair valor da URL:', error);
+    return 0;
+  }
+}
+
+/**
+ * Retorna a data atual formatada como YYYY-MM-DD
+ */
+function formatCurrentDate(): string {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 /**
