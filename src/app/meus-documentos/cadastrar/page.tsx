@@ -195,7 +195,51 @@ export default function CadastrarDocumento() {
     
     console.log('QR Code lido:', result);
     
-    // Processar dados do cupom fiscal independente do formato
+    // Processamento baseado no tipo de QR code
+    let qrCodeContent = result.trim();
+    
+    // Verificar se é um link (URL)
+    if (qrCodeContent.startsWith('http://') || qrCodeContent.startsWith('https://')) {
+      console.log('QR Code é uma URL válida, abrindo no navegador:', qrCodeContent);
+      
+      // Extrair a chave de acesso para preencher o número do documento
+      try {
+        const { extractAccessKeyFromQRCode } = await import('@/lib/services/fiscalReceiptService');
+        const accessKey = extractAccessKeyFromQRCode(qrCodeContent);
+        
+        if (accessKey) {
+          setFormData(prev => ({
+            ...prev,
+            numero_documento: accessKey
+          }));
+          
+          toast.success('Chave de acesso extraída com sucesso!');
+        }
+      } catch (error) {
+        console.error('Erro ao extrair chave de acesso:', error);
+      }
+      
+      // Abrir o link em uma nova aba
+      window.open(qrCodeContent, '_blank');
+      toast.success('Link do QR Code aberto em uma nova aba. Por favor, copie os dados de lá.');
+      
+      return;
+    }
+    
+    // Se não for uma URL, é provavelmente uma chave de acesso direta
+    if (/^\d{44}$/.test(qrCodeContent)) {
+      console.log('QR Code parece ser uma chave de acesso direta:', qrCodeContent);
+      
+      setFormData(prev => ({
+        ...prev,
+        numero_documento: qrCodeContent
+      }));
+      
+      toast.success('Chave de acesso lida com sucesso!');
+      return;
+    }
+    
+    // Processamento legado para outros formatos
     setIsProcessingQRCode(true);
     toast.loading('Processando QR Code...');
     
@@ -205,7 +249,7 @@ export default function CadastrarDocumento() {
         const { extractAccessKeyFromQRCode } = await import('@/lib/services/fiscalReceiptService');
         console.log('Extraindo chave de acesso diretamente...');
         
-        const accessKey = extractAccessKeyFromQRCode(result);
+        const accessKey = extractAccessKeyFromQRCode(qrCodeContent);
         console.log('Chave de acesso extraída:', accessKey);
         
         if (accessKey) {
@@ -220,57 +264,12 @@ export default function CadastrarDocumento() {
         }
       }
       
-      // Tentar processar como cupom fiscal (para obter dados adicionais)
-      console.log('Processando dados completos do cupom fiscal...');
-      const fiscalData = await processFiscalReceiptQRCode(result);
-      
-      if (fiscalData) {
-        console.log('Dados do cupom fiscal processados:', fiscalData);
-        // Sucesso ao processar o QR Code
-        setFiscalReceiptData(fiscalData);
-        
-        // Se o tipo de documento for cupom_fiscal, preencher os campos automaticamente
-        if (formData.tipo === 'cupom_fiscal') {
-          console.log('Preenchendo campos do formulário automaticamente');
-          
-          // Determinar qual valor usar (serviceValue ou totalValue)
-          const valorParaUsar = fiscalData.receipt.serviceValue !== undefined && fiscalData.receipt.serviceValue > 0 
-            ? fiscalData.receipt.serviceValue 
-            : fiscalData.receipt.totalValue;
-          
-          console.log('Valor a ser usado:', valorParaUsar, 
-                     'serviceValue:', fiscalData.receipt.serviceValue,
-                     'totalValue:', fiscalData.receipt.totalValue);
-          
-          setFormData(prev => ({
-            ...prev,
-            numero_documento: fiscalData.receipt.accessKey || prev.numero_documento,
-            data_emissao: fiscalData.receipt.issueDate || prev.data_emissao,
-            valor: valorParaUsar ? valorParaUsar.toLocaleString('pt-BR', {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2
-            }) : prev.valor
-          }));
-          
-          toast.dismiss();
-          toast.success('Dados do cupom fiscal aplicados automaticamente!');
-        } else {
-          // Se não for cupom fiscal, mostrar modal com os dados
-          setShowFiscalReceiptModal(true);
-          toast.dismiss();
-          toast.success('QR Code processado com sucesso!');
-        }
-      } else {
-        // Se não for um cupom fiscal reconhecido, use como número do documento
-        toast.dismiss();
-        console.log('QR Code não identificado como cupom fiscal, usando como número do documento');
-        
-        // Se não conseguimos obter dados completos, pelo menos garantimos que temos o número do documento
-        if (formData.tipo === 'cupom_fiscal' && !formData.numero_documento) {
-          setFormData(prev => ({ ...prev, numero_documento: result }));
-        }
-        
-        toast.success('QR Code lido com sucesso!');
+      // Usar como texto direto se nada mais funcionar
+      if (!formData.numero_documento) {
+        setFormData(prev => ({ 
+          ...prev, 
+          numero_documento: qrCodeContent.substring(0, 100) // Limitar o tamanho
+        }));
       }
     } catch (error) {
       console.error('Erro ao processar QR code:', error);
@@ -278,27 +277,15 @@ export default function CadastrarDocumento() {
       toast.error('Erro ao processar o QR code');
       
       // Mesmo com erro, tentar usar o texto do QR code como número do documento
-      if (formData.tipo === 'cupom_fiscal') {
-        try {
-          const { extractAccessKeyFromQRCode } = await import('@/lib/services/fiscalReceiptService');
-          const accessKey = extractAccessKeyFromQRCode(result);
-          
-          if (accessKey) {
-            setFormData(prev => ({ ...prev, numero_documento: accessKey }));
-            toast.success('Chave de acesso extraída mesmo com erro no processamento!');
-          } else {
-            setFormData(prev => ({ ...prev, numero_documento: result }));
-          }
-        } catch (extractError) {
-          console.error('Erro ao extrair chave:', extractError);
-          setFormData(prev => ({ ...prev, numero_documento: result }));
-        }
-      } else {
-        // Use o resultado como número do documento para outros tipos
-        setFormData(prev => ({ ...prev, numero_documento: result }));
+      if (!formData.numero_documento) {
+        setFormData(prev => ({ 
+          ...prev, 
+          numero_documento: qrCodeContent.substring(0, 100) // Limitar o tamanho
+        }));
       }
     } finally {
       setIsProcessingQRCode(false);
+      toast.dismiss();
     }
   };
 
