@@ -200,28 +200,93 @@ export default function CadastrarDocumento() {
     toast.loading('Processando QR Code...');
     
     try {
-      // Tentar processar como cupom fiscal
+      // Se o tipo de documento selecionado for 'cupom_fiscal', tentar extrair a chave de acesso diretamente
+      if (formData.tipo === 'cupom_fiscal') {
+        const { extractAccessKeyFromQRCode } = await import('@/lib/services/fiscalReceiptService');
+        console.log('Extraindo chave de acesso diretamente...');
+        
+        const accessKey = extractAccessKeyFromQRCode(result);
+        console.log('Chave de acesso extraída:', accessKey);
+        
+        if (accessKey) {
+          // Preencher o número do documento com a chave de acesso extraída
+          setFormData(prev => ({
+            ...prev,
+            numero_documento: accessKey
+          }));
+          
+          toast.dismiss();
+          toast.success('Chave de acesso extraída com sucesso!');
+        }
+      }
+      
+      // Tentar processar como cupom fiscal (para obter dados adicionais)
+      console.log('Processando dados completos do cupom fiscal...');
       const fiscalData = await processFiscalReceiptQRCode(result);
       
       if (fiscalData) {
+        console.log('Dados do cupom fiscal processados:', fiscalData);
         // Sucesso ao processar o QR Code
         setFiscalReceiptData(fiscalData);
-        setShowFiscalReceiptModal(true);
-        toast.dismiss();
-        toast.success('QR Code processado com sucesso!');
+        
+        // Se o tipo de documento for cupom_fiscal, preencher os campos automaticamente
+        if (formData.tipo === 'cupom_fiscal') {
+          console.log('Preenchendo campos do formulário automaticamente');
+          setFormData(prev => ({
+            ...prev,
+            numero_documento: fiscalData.receipt.accessKey || prev.numero_documento,
+            data_emissao: fiscalData.receipt.issueDate || prev.data_emissao,
+            valor: fiscalData.receipt.totalValue ? fiscalData.receipt.totalValue.toLocaleString('pt-BR', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2
+            }) : prev.valor
+          }));
+          
+          toast.dismiss();
+          toast.success('Dados do cupom fiscal aplicados automaticamente!');
+        } else {
+          // Se não for cupom fiscal, mostrar modal com os dados
+          setShowFiscalReceiptModal(true);
+          toast.dismiss();
+          toast.success('QR Code processado com sucesso!');
+        }
       } else {
         // Se não for um cupom fiscal reconhecido, use como número do documento
         toast.dismiss();
         console.log('QR Code não identificado como cupom fiscal, usando como número do documento');
-        setFormData(prev => ({ ...prev, numero_documento: result }));
+        
+        // Se não conseguimos obter dados completos, pelo menos garantimos que temos o número do documento
+        if (formData.tipo === 'cupom_fiscal' && !formData.numero_documento) {
+          setFormData(prev => ({ ...prev, numero_documento: result }));
+        }
+        
         toast.success('QR Code lido com sucesso!');
       }
     } catch (error) {
       console.error('Erro ao processar QR code:', error);
       toast.dismiss();
       toast.error('Erro ao processar o QR code');
-      // Use o resultado como número do documento
-      setFormData(prev => ({ ...prev, numero_documento: result }));
+      
+      // Mesmo com erro, tentar usar o texto do QR code como número do documento
+      if (formData.tipo === 'cupom_fiscal') {
+        try {
+          const { extractAccessKeyFromQRCode } = await import('@/lib/services/fiscalReceiptService');
+          const accessKey = extractAccessKeyFromQRCode(result);
+          
+          if (accessKey) {
+            setFormData(prev => ({ ...prev, numero_documento: accessKey }));
+            toast.success('Chave de acesso extraída mesmo com erro no processamento!');
+          } else {
+            setFormData(prev => ({ ...prev, numero_documento: result }));
+          }
+        } catch (extractError) {
+          console.error('Erro ao extrair chave:', extractError);
+          setFormData(prev => ({ ...prev, numero_documento: result }));
+        }
+      } else {
+        // Use o resultado como número do documento para outros tipos
+        setFormData(prev => ({ ...prev, numero_documento: result }));
+      }
     } finally {
       setIsProcessingQRCode(false);
     }
@@ -265,15 +330,85 @@ export default function CadastrarDocumento() {
   };
 
   const handleConfirmFiscalReceipt = (data: FiscalReceiptData) => {
+    console.log('Aplicando dados do cupom fiscal ao formulário:', data);
+    // Processar a data de emissão para o formato esperado pelo input (YYYY-MM-DD)
+    let formattedDate = '';
+    
+    if (data.receipt.issueDate) {
+      try {
+        // Tentar detectar o formato da data (pode vir em diferentes formatos dependendo da SEFAZ)
+        const dateStr = data.receipt.issueDate.trim();
+        console.log('Data original:', dateStr);
+        
+        // Formatos comuns: DD/MM/YYYY, DD/MM/YY, YYYY-MM-DD, etc.
+        if (dateStr.includes('/')) {
+          // Formato DD/MM/YYYY ou DD/MM/YY
+          const parts = dateStr.split('/');
+          if (parts.length === 3) {
+            let year = parts[2];
+            const day = parts[0].padStart(2, '0');
+            const month = parts[1].padStart(2, '0');
+            
+            // Se o ano tem 2 dígitos, assumir que é 20XX (para datas recentes)
+            if (year.length === 2) {
+              year = `20${year}`;
+            }
+            
+            formattedDate = `${year}-${month}-${day}`;
+            console.log('Data formatada (DD/MM/YYYY):', formattedDate);
+          }
+        } else if (dateStr.includes('-')) {
+          // Formato YYYY-MM-DD (já está no formato esperado)
+          const parts = dateStr.split('-');
+          if (parts.length === 3) {
+            // Verificar se está realmente no formato YYYY-MM-DD
+            const year = parts[0];
+            if (year.length === 4) {
+              formattedDate = dateStr;
+              console.log('Data já está no formato correto (YYYY-MM-DD)');
+            } else {
+              // Pode estar no formato DD-MM-YYYY
+              const day = parts[0].padStart(2, '0');
+              const month = parts[1].padStart(2, '0');
+              const correctedYear = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+              formattedDate = `${correctedYear}-${month}-${day}`;
+              console.log('Data formatada (DD-MM-YYYY):', formattedDate);
+            }
+          }
+        } else {
+          // Tentar parsear a data usando o objeto Date
+          const date = new Date(dateStr);
+          if (!isNaN(date.getTime())) {
+            const year = date.getFullYear();
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+            const day = date.getDate().toString().padStart(2, '0');
+            formattedDate = `${year}-${month}-${day}`;
+            console.log('Data formatada (usando objeto Date):', formattedDate);
+          } else {
+            console.warn('Não foi possível processar a data:', dateStr);
+          }
+        }
+      } catch (error) {
+        console.error('Erro ao processar data de emissão:', error);
+      }
+    }
+    
+    // Formatar o valor total para o formato brasileiro (com vírgula como separador decimal)
+    let formattedValue = '';
+    if (typeof data.receipt.totalValue === 'number' && !isNaN(data.receipt.totalValue)) {
+      formattedValue = data.receipt.totalValue.toLocaleString('pt-BR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+      console.log('Valor formatado:', formattedValue);
+    }
+    
     // Preencher o formulário com os dados extraídos do cupom fiscal
     setFormData(prev => ({
       ...prev,
       numero_documento: data.receipt.accessKey || prev.numero_documento,
-      valor: data.receipt.totalValue ? data.receipt.totalValue.toLocaleString('pt-BR', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-      }) : prev.valor,
-      data_emissao: data.receipt.issueDate || prev.data_emissao
+      valor: formattedValue || prev.valor,
+      data_emissao: formattedDate || prev.data_emissao
     }));
     
     // Fechar o modal de dados fiscais

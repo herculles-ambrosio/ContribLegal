@@ -38,8 +38,11 @@ export interface FiscalReceiptData {
  */
 export function extractAccessKeyFromQRCode(qrCodeText: string): string {
   try {
+    console.log('Tentando extrair chave de acesso do QR Code:', qrCodeText);
+    
     // Verificar se é uma URL que contém o parâmetro p=
     if (qrCodeText.includes('?p=') || qrCodeText.includes('&p=')) {
+      console.log('QR Code contém parâmetro p=');
       // Exemplo: https://portalsped.fazenda.mg.gov.br/portalnfce/sistema/qrcode.xhtml?p=31250456126730000198650010000080061241229020|2|1|1|683921517D4F53911A64D25DDD747718C32A5400
       // Precisamos extrair os 44 dígitos numéricos após "p="
       
@@ -49,13 +52,16 @@ export function extractAccessKeyFromQRCode(qrCodeText: string): string {
       
       if (urlKeyMatch && urlKeyMatch[1]) {
         const paramValue = urlKeyMatch[1];
+        console.log('Valor do parâmetro p=', paramValue);
         
         // Na maioria dos casos, a chave de acesso é a primeira parte antes do pipe
         const parts = paramValue.split('|');
         const firstPart = parts[0];
+        console.log('Primeira parte antes do pipe:', firstPart);
         
         // Extrair apenas dígitos do primeiro segmento
         const numericValue = firstPart.replace(/[^0-9]/g, '');
+        console.log('Valor numérico extraído:', numericValue, 'comprimento:', numericValue.length);
         
         // Se temos exatamente 44 dígitos, é provavelmente a chave de acesso
         if (numericValue.length === 44) {
@@ -74,12 +80,45 @@ export function extractAccessKeyFromQRCode(qrCodeText: string): string {
           
           // Tentar extrair todos os dígitos do parâmetro completo
           const allDigits = paramValue.replace(/[^0-9]/g, '');
+          console.log('Todos os dígitos do parâmetro:', allDigits, 'comprimento:', allDigits.length);
+          
           if (allDigits.length >= 44) {
             const accessKey = allDigits.substring(0, 44);
             console.log('Extraídos 44 dígitos do valor completo:', accessKey);
             return accessKey;
           }
+          
+          // Se ainda não conseguimos 44 dígitos, vamos tentar usar o texto completo do QR code
+          const allQrDigits = qrCodeText.replace(/[^0-9]/g, '');
+          console.log('Todos os dígitos do QR code completo:', allQrDigits.length);
+          
+          if (allQrDigits.length >= 44) {
+            const accessKey = allQrDigits.substring(0, 44);
+            console.log('Extraídos 44 dígitos do QR code completo:', accessKey);
+            return accessKey;
+          }
         }
+      } else {
+        console.log('Não foi possível extrair o valor do parâmetro p= usando regex');
+      }
+    } else if (qrCodeText.length >= 44 && /^\d+$/.test(qrCodeText.substring(0, 44))) {
+      // Caso o QR code já seja a própria chave numérica
+      console.log('QR code parece ser a própria chave numérica');
+      return qrCodeText.substring(0, 44);
+    } else {
+      // Tenta encontrar 44 dígitos consecutivos em qualquer parte do texto
+      console.log('Tentando encontrar 44 dígitos consecutivos em qualquer parte do texto');
+      const digitGroups = qrCodeText.match(/\d{44,}/g);
+      if (digitGroups && digitGroups.length > 0) {
+        console.log('Encontrado grupo de 44+ dígitos:', digitGroups[0]);
+        return digitGroups[0].substring(0, 44);
+      }
+      
+      // Última tentativa: extrair todos os dígitos e pegar os primeiros 44 (se houver)
+      const allDigits = qrCodeText.replace(/[^0-9]/g, '');
+      console.log('Todos os dígitos encontrados:', allDigits.length);
+      if (allDigits.length >= 44) {
+        return allDigits.substring(0, 44);
       }
     }
     
