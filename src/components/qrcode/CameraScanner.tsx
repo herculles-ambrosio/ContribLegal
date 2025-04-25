@@ -92,26 +92,59 @@ export default function CameraScanner({ onScanSuccess, onError }: CameraScannerP
   
   // Pré-processa o link do QR Code para garantir que seja válido
   const preprocessQrResult = (decodedText: string): string => {
+    console.log('Pré-processando QR code:', decodedText);
+    
+    // Remove espaços em branco e caracteres indesejados
+    let cleanText = decodedText.trim();
+    
     // Verifica se o texto já é uma URL
-    if (decodedText.startsWith('http://') || decodedText.startsWith('https://')) {
-      return decodedText;
+    if (/^https?:\/\//i.test(cleanText)) {
+      console.log('Texto já é uma URL válida');
+      return cleanText;
     }
     
     // Se for apenas números (44 dígitos = chave de acesso), pode ser tratado diretamente
-    if (/^\d{44}$/.test(decodedText)) {
-      return decodedText;
+    if (/^\d{44}$/.test(cleanText)) {
+      console.log('QR code é uma chave de acesso de 44 dígitos');
+      return cleanText;
     }
     
-    // Verifica se é um QR code com parâmetros
-    if (decodedText.includes('?') || decodedText.includes('&')) {
-      // Tenta extrair uma URL válida
-      const urlMatch = decodedText.match(/(https?:\/\/[^\s]+)/i);
-      if (urlMatch) {
-        return urlMatch[0];
+    // Verifica se contém uma URL completa em algum lugar no texto
+    const urlRegex = /(https?:\/\/[^\s<>"']+)/i;
+    const urlMatch = cleanText.match(urlRegex);
+    if (urlMatch) {
+      console.log('URL extraída do texto do QR code:', urlMatch[0]);
+      // Extrair a URL completa até encontrar espaço ou outro delimitador
+      let fullUrl = urlMatch[0];
+      
+      // Alguns QR codes podem ter a URL terminando com aspas ou outros caracteres
+      if (fullUrl.endsWith('"') || fullUrl.endsWith("'") || 
+          fullUrl.endsWith('>') || fullUrl.endsWith(')')) {
+        fullUrl = fullUrl.slice(0, -1);
+      }
+      
+      // Se a URL contiver caracteres de escape \, removê-los
+      fullUrl = fullUrl.replace(/\\(.)/g, '$1');
+      
+      return fullUrl;
+    }
+    
+    // Verifica se parece ser um texto codificado ou truncado que contém http ou https
+    if (cleanText.includes('http') || cleanText.includes('https')) {
+      console.log('Texto contém fragmentos de URL, tentando reconstruir');
+      
+      // Tenta extrair uma possível URL começando com http ou https
+      const httpPos = cleanText.indexOf('http');
+      if (httpPos >= 0) {
+        const possibleUrl = cleanText.substring(httpPos);
+        console.log('Possível URL reconstruída:', possibleUrl);
+        return possibleUrl;
       }
     }
     
-    return decodedText;
+    // Se não conseguimos identificar como URL, retornamos o texto original
+    console.log('Retornando texto original não modificado');
+    return cleanText;
   };
 
   const startScanner = async () => {
