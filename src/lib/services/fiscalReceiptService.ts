@@ -35,6 +35,10 @@ export interface FiscalReceiptData {
  * Extrai a chave de acesso de 44 dígitos do QR Code
  * @param qrCodeText URL do QR Code
  * @returns Chave de acesso extraída ou string vazia se não encontrada
+ * @example
+ * // Exemplo de uso:
+ * const accessKey = extractAccessKeyFromQRCode('https://portalsped.fazenda.mg.gov.br/portalnfce/sistema/qrcode.xhtml?p=31250456126730000198650010000080061241229020|2|1|1|683921517D4F53911A64D25DDD747718C32A5400');
+ * // Retorna: 31250456126730000198650010000080061241229020
  */
 export function extractAccessKeyFromQRCode(qrCodeText: string): string {
   try {
