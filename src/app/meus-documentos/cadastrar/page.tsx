@@ -754,15 +754,7 @@ export default function CadastrarDocumento() {
                 
                 <div className="border-2 border-blue-500 rounded-lg overflow-hidden mb-3" id="scanner-container">
                   <QrCodeScanner 
-                    onScanSuccess={handleQrCodeResult}
-                    onScanError={(error) => {
-                      console.log("Erro no scanner:", error);
-                      handleQrCodeError(error);
-                    }}
-                    onClose={() => {
-                      setShowScanner(false);
-                      setCameraPermission(false);
-                    }}
+                    onSubmit={handleQrCodeResult}
                   />
                 </div>
                 
