@@ -32,6 +32,66 @@ export interface FiscalReceiptData {
 }
 
 /**
+ * Extrai a chave de acesso de 44 dígitos do QR Code
+ * @param qrCodeText URL do QR Code
+ * @returns Chave de acesso extraída ou string vazia se não encontrada
+ */
+export function extractAccessKeyFromQRCode(qrCodeText: string): string {
+  try {
+    // Verificar se é uma URL que contém o parâmetro p=
+    if (qrCodeText.includes('?p=') || qrCodeText.includes('&p=')) {
+      // Exemplo: https://portalsped.fazenda.mg.gov.br/portalnfce/sistema/qrcode.xhtml?p=31250456126730000198650010000080061241229020|2|1|1|683921517D4F53911A64D25DDD747718C32A5400
+      // Precisamos extrair os 44 dígitos numéricos após "p="
+      
+      // Extrair o valor completo do parâmetro p usando regex
+      const urlKeyRegex = /[?&]p=([^&]+)/;
+      const urlKeyMatch = qrCodeText.match(urlKeyRegex);
+      
+      if (urlKeyMatch && urlKeyMatch[1]) {
+        const paramValue = urlKeyMatch[1];
+        
+        // Na maioria dos casos, a chave de acesso é a primeira parte antes do pipe
+        const parts = paramValue.split('|');
+        const firstPart = parts[0];
+        
+        // Extrair apenas dígitos do primeiro segmento
+        const numericValue = firstPart.replace(/[^0-9]/g, '');
+        
+        // Se temos exatamente 44 dígitos, é provavelmente a chave de acesso
+        if (numericValue.length === 44) {
+          console.log('Chave de acesso de 44 dígitos extraída com sucesso:', numericValue);
+          return numericValue;
+        } 
+        // Se tivermos mais de 44 dígitos, pegamos os primeiros 44
+        else if (numericValue.length > 44) {
+          const accessKey = numericValue.substring(0, 44);
+          console.log('Extraídos primeiros 44 dígitos da chave:', accessKey);
+          return accessKey;
+        }
+        // Se tivermos menos de 44 dígitos, pode estar em um formato diferente
+        else {
+          console.warn('Valor extraído não tem 44 dígitos:', numericValue);
+          
+          // Tentar extrair todos os dígitos do parâmetro completo
+          const allDigits = paramValue.replace(/[^0-9]/g, '');
+          if (allDigits.length >= 44) {
+            const accessKey = allDigits.substring(0, 44);
+            console.log('Extraídos 44 dígitos do valor completo:', accessKey);
+            return accessKey;
+          }
+        }
+      }
+    }
+    
+    console.log('Não foi possível extrair a chave de acesso do QR Code');
+    return '';
+  } catch (error) {
+    console.error('Erro ao extrair chave de acesso do QR Code:', error);
+    return '';
+  }
+}
+
+/**
  * Extrai o código QR de uma URL escaneada
  * @param qrCodeText Texto obtido da leitura do QR Code
  * @returns Dados estruturados do cupom fiscal ou null se não for possível processar
@@ -42,6 +102,9 @@ export async function processFiscalReceiptQRCode(qrCodeText: string): Promise<Fi
     
     // Verificar se o texto contém uma URL válida
     let qrUrl = qrCodeText;
+    
+    // Extrair a chave de acesso do QR Code (primeiros 44 dígitos após p=)
+    const accessKeyFromUrl = extractAccessKeyFromQRCode(qrCodeText);
     
     // Se o texto não parece ser uma URL, tentamos tratar como uma chave de acesso
     if (!qrCodeText.startsWith('http')) {
@@ -106,6 +169,27 @@ export async function processFiscalReceiptQRCode(qrCodeText: string): Promise<Fi
       
       if (!response.ok) {
         console.error(`Falha ao obter dados do cupom fiscal. Status: ${response.status}`);
+        
+        // Se temos a chave de acesso da URL, ainda podemos retornar um objeto mínimo
+        if (accessKeyFromUrl) {
+          return {
+            consumer: {
+              name: 'CONSUMIDOR NÃO IDENTIFICADO',
+              documentNumber: 'NÃO INFORMADO',
+              state: 'MG'
+            },
+            issuer: {
+              name: 'ESTABELECIMENTO NÃO IDENTIFICADO',
+              documentNumber: 'NÃO INFORMADO'
+            },
+            receipt: {
+              accessKey: accessKeyFromUrl,
+              totalValue: 0
+            },
+            qrCodeUrl: qrCodeText
+          };
+        }
+        
         throw new Error(`Falha ao obter dados do cupom fiscal: ${response.statusText}`);
       }
 
@@ -114,6 +198,27 @@ export async function processFiscalReceiptQRCode(qrCodeText: string): Promise<Fi
       
       if (html.length < 100) {
         console.error('HTML muito curto, provavelmente resposta inválida');
+        
+        // Se temos a chave de acesso da URL, ainda podemos retornar um objeto mínimo
+        if (accessKeyFromUrl) {
+          return {
+            consumer: {
+              name: 'CONSUMIDOR NÃO IDENTIFICADO',
+              documentNumber: 'NÃO INFORMADO',
+              state: 'MG'
+            },
+            issuer: {
+              name: 'ESTABELECIMENTO NÃO IDENTIFICADO',
+              documentNumber: 'NÃO INFORMADO'
+            },
+            receipt: {
+              accessKey: accessKeyFromUrl,
+              totalValue: 0
+            },
+            qrCodeUrl: qrCodeText
+          };
+        }
+        
         return null;
       }
       
@@ -221,16 +326,22 @@ export async function processFiscalReceiptQRCode(qrCodeText: string): Promise<Fi
       
       // Verificar campos obrigatórios
       if (!accessKey) {
-        console.error('Não foi possível extrair a chave de acesso');
+        console.error('Não foi possível extrair a chave de acesso da página');
         
-        // Último recurso: tentar extrair a chave de acesso da URL
-        const urlKeyRegex = /[?&]p=([A-Za-z0-9|]+)/;
-        const urlKeyMatch = qrCodeText.match(urlKeyRegex);
-        if (urlKeyMatch && urlKeyMatch[1]) {
-          accessKey = urlKeyMatch[1];
-          console.log('Chave de acesso extraída da URL:', accessKey);
+        // Usar a chave extraída da URL se disponível
+        if (accessKeyFromUrl) {
+          accessKey = accessKeyFromUrl;
+          console.log('Usando chave de acesso extraída da URL:', accessKey);
         } else {
-          throw new Error('Não foi possível extrair a chave de acesso');
+          // Último recurso: tentar extrair a chave de acesso da URL
+          const urlKeyRegex = /[?&]p=([A-Za-z0-9|]+)/;
+          const urlKeyMatch = qrCodeText.match(urlKeyRegex);
+          if (urlKeyMatch && urlKeyMatch[1]) {
+            accessKey = urlKeyMatch[1];
+            console.log('Chave de acesso extraída da URL:', accessKey);
+          } else {
+            throw new Error('Não foi possível extrair a chave de acesso');
+          }
         }
       }
       
@@ -239,6 +350,7 @@ export async function processFiscalReceiptQRCode(qrCodeText: string): Promise<Fi
       console.log('- CNPJ:', issuerDocument);
       console.log('- Chave:', accessKey?.substr(0, 10) + '...');
       console.log('- Valor:', totalValue);
+      console.log('- Data de Emissão:', issueDate);
       
       // Estruturar os dados do cupom fiscal
       const fiscalReceiptData: FiscalReceiptData = {
@@ -253,7 +365,7 @@ export async function processFiscalReceiptQRCode(qrCodeText: string): Promise<Fi
           address: issuerAddress
         },
         receipt: {
-          accessKey,
+          accessKey: accessKey || accessKeyFromUrl,
           totalValue,
           issueDate
         },
@@ -264,6 +376,27 @@ export async function processFiscalReceiptQRCode(qrCodeText: string): Promise<Fi
     } catch (fetchError) {
       clearTimeout(timeoutId);
       console.error('Erro ao buscar a página do cupom fiscal:', fetchError);
+      
+      // Se temos a chave de acesso da URL, ainda podemos retornar um objeto mínimo
+      if (accessKeyFromUrl) {
+        return {
+          consumer: {
+            name: 'CONSUMIDOR NÃO IDENTIFICADO',
+            documentNumber: 'NÃO INFORMADO',
+            state: 'MG'
+          },
+          issuer: {
+            name: 'ESTABELECIMENTO NÃO IDENTIFICADO',
+            documentNumber: 'NÃO INFORMADO'
+          },
+          receipt: {
+            accessKey: accessKeyFromUrl,
+            totalValue: 0
+          },
+          qrCodeUrl: qrCodeText
+        };
+      }
+      
       throw fetchError;
     }
   } catch (error) {
