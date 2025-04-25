@@ -22,7 +22,10 @@ const nextConfig = {
   distDir: '.next',
   
   // Define o diretório que contém o código-fonte da aplicação
-  transpilePackages: ['src']
+  transpilePackages: ['src'],
+  
+  // Configuração para localizar as pastas app e pages
+  pageExtensions: ['ts', 'tsx', 'js', 'jsx', 'md', 'mdx']
 };
 
 module.exports = nextConfig; 
