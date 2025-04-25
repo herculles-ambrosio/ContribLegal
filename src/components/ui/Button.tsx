@@ -3,7 +3,7 @@ import { IconType } from 'react-icons';
 
 type ButtonVariant = 'primary' | 'secondary' | 'success' | 'danger' | 'warning' | 'info';
 
-type ButtonProps = {
+export type ButtonProps = {
   variant?: ButtonVariant;
   icon?: IconType;
   isLoading?: boolean;
@@ -20,7 +20,8 @@ const variantClasses: Record<ButtonVariant, string> = {
   info: 'bg-cyan-500 hover:bg-cyan-600 text-white shadow-lg shadow-cyan-300/50'
 };
 
-export default function Button({
+// Componente com exportação nomeada
+export function Button({
   variant = 'primary',
   icon: Icon,
   isLoading = false,
@@ -72,3 +73,6 @@ export default function Button({
     </button>
   );
 }
+
+// Exportação default para manter compatibilidade com código existente
+export default Button;
