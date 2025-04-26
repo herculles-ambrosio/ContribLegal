@@ -170,7 +170,35 @@ export default function CameraScanner({ onScanSuccess, onError }: CameraScannerP
       await html5QrCodeRef.current.start(
         selectedCamera,
         config,
-        (decodedText) => handleScanSuccess(decodedText),
+        (decodedText) => {
+          console.log('QR Code detectado, processando:', decodedText);
+          
+          // Processar o QR code imediatamente
+          const processedText = preprocessQrResult(decodedText);
+          
+          // Abrir o link imediatamente se for uma URL
+          if (/^https?:\/\//i.test(processedText)) {
+            console.log('URL detectada, abrindo IMEDIATAMENTE:', processedText);
+            
+            // Usar setTimeout para garantir que a janela seja aberta
+            // Alguns navegadores podem bloquear popups em callbacks diretos
+            setTimeout(() => {
+              try {
+                const newWindow = window.open(processedText, '_blank');
+                if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+                  console.warn('Popup possivelmente bloqueado pelo navegador');
+                  alert(`Link detectado! Abra manualmente: ${processedText}`);
+                }
+              } catch (error) {
+                console.error('Erro ao abrir URL:', error);
+                alert(`Erro ao abrir link. Copie e abra manualmente: ${processedText}`);
+              }
+            }, 100);
+          }
+          
+          // Continuar com o processamento normal
+          handleScanSuccess(processedText);
+        },
         handleScanFailure
       );
     } catch (err) {
@@ -185,23 +213,10 @@ export default function CameraScanner({ onScanSuccess, onError }: CameraScannerP
   const handleScanSuccess = (decodedText: string) => {
     console.log('QR Code lido com sucesso:', decodedText);
     
-    // Pré-processar o QR code para garantir que é uma URL válida
-    const processedText = preprocessQrResult(decodedText);
-    
-    // Verificar se o texto é uma URL e abrir diretamente
-    if (/^https?:\/\//i.test(processedText)) {
-      console.log('Abrindo URL do QR code:', processedText);
-      
-      // Abrir o link em uma nova aba
-      if (typeof window !== 'undefined') {
-        window.open(processedText, '_blank');
-      }
-    }
-    
     if (html5QrCodeRef.current) {
       html5QrCodeRef.current.stop()
         .then(() => {
-          onScanSuccess(processedText);
+          onScanSuccess(decodedText);
           setScannerStarted(false);
         })
         .catch(err => {
