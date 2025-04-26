@@ -206,6 +206,12 @@ export default function CadastrarDocumento() {
       // Armazenar o link original para uso no campo clicável
       setQrCodeLink(qrCodeContent);
       
+      // IMPORTANTE: SEMPRE salvar o link completo no campo número_documento
+      setFormData(prev => ({
+        ...prev,
+        numero_documento: qrCodeContent // Garante que o link completo seja salvo
+      }));
+      
       try {
         // Importar o serviço de processamento de cupom fiscal
         const { fetchReceiptPage } = await import('@/lib/services/fiscalReceiptService');
@@ -225,33 +231,23 @@ export default function CadastrarDocumento() {
             });
           }
           
-          // Atualizar o formulário com os dados extraídos
+          // Atualizar APENAS os campos de valor e data, mantendo o link no campo documento
           setFormData(prev => ({
             ...prev,
-            numero_documento: qrCodeContent,
+            // numero_documento já foi definido acima - mantém o link completo
             valor: formattedValue || prev.valor,
             data_emissao: receiptData.receipt.issueDate || prev.data_emissao
           }));
           
           toast.success('Dados do cupom fiscal extraídos com sucesso!');
-        } else {
-          // Se não conseguiu extrair dados, usar apenas o link
-          setFormData(prev => ({
-            ...prev,
-            numero_documento: qrCodeContent
-          }));
           
+          // Abrir URL do cupom fiscal novamente para garantir que o usuário veja o conteúdo
+          window.open(qrCodeContent, '_blank');
+        } else {
           toast.error('Não foi possível extrair dados do cupom fiscal. Apenas o link foi salvo.');
         }
       } catch (error) {
         console.error('Erro ao processar dados do QR code:', error);
-        
-        // Em caso de erro, usar apenas o link
-        setFormData(prev => ({
-          ...prev,
-          numero_documento: qrCodeContent
-        }));
-        
         toast.error('Erro ao processar QR code. Apenas o link foi salvo.');
       }
       
@@ -262,12 +258,22 @@ export default function CadastrarDocumento() {
     if (/^\d{44}$/.test(qrCodeContent)) {
       console.log('Cadastro: QR Code parece ser uma chave de acesso direta:', qrCodeContent);
       
+      // Para chaves diretas, construir uma URL da fazenda e usá-la
+      const urlBase = 'https://portalsped.fazenda.mg.gov.br/portalnfce/sistema/qrcode.xhtml?p=';
+      const fullUrl = `${urlBase}${qrCodeContent}`;
+      
+      setQrCodeLink(fullUrl);
+      
       setFormData(prev => ({
         ...prev,
-        numero_documento: qrCodeContent
+        numero_documento: fullUrl // Salvar URL completa para chaves diretas também
       }));
       
-      toast.success('Chave de acesso lida com sucesso!');
+      toast.success('Chave de acesso convertida em URL e salva com sucesso!');
+      
+      // Tentar abrir a URL construída
+      window.open(fullUrl, '_blank');
+      
       return;
     }
     
@@ -732,7 +738,9 @@ export default function CadastrarDocumento() {
                 
                 <div className="border-2 border-blue-500 rounded-lg overflow-hidden mb-3" id="scanner-container">
                   <QrCodeScanner 
-                    onSubmit={handleQrCodeResult}
+                    isOpen={true}
+                    onClose={() => setShowScanner(false)}
+                    onScanSuccess={handleQrCodeResult}
                   />
                 </div>
                 
