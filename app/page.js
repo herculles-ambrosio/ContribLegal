@@ -2,8 +2,8 @@
 import { redirect } from 'next/navigation';
 
 export default function Home() {
-  // Redireciona para a página principal
-  redirect('/');
+  // Redirecionar para a página de dashboard em vez de redirecionar para si mesmo
+  redirect('/dashboard');
   
   // Este trecho nunca será executado devido ao redirecionamento acima
   return null;
