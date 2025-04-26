@@ -170,7 +170,7 @@ export default function CameraScanner({ onScanSuccess, onError }: CameraScannerP
       await html5QrCodeRef.current.start(
         selectedCamera,
         config,
-        (decodedText) => handleScanSuccess(preprocessQrResult(decodedText)),
+        (decodedText) => handleScanSuccess(decodedText),
         handleScanFailure
       );
     } catch (err) {
@@ -185,10 +185,23 @@ export default function CameraScanner({ onScanSuccess, onError }: CameraScannerP
   const handleScanSuccess = (decodedText: string) => {
     console.log('QR Code lido com sucesso:', decodedText);
     
+    // Pré-processar o QR code para garantir que é uma URL válida
+    const processedText = preprocessQrResult(decodedText);
+    
+    // Verificar se o texto é uma URL e abrir diretamente
+    if (/^https?:\/\//i.test(processedText)) {
+      console.log('Abrindo URL do QR code:', processedText);
+      
+      // Abrir o link em uma nova aba
+      if (typeof window !== 'undefined') {
+        window.open(processedText, '_blank');
+      }
+    }
+    
     if (html5QrCodeRef.current) {
       html5QrCodeRef.current.stop()
         .then(() => {
-          onScanSuccess(decodedText);
+          onScanSuccess(processedText);
           setScannerStarted(false);
         })
         .catch(err => {

@@ -20,6 +20,18 @@ export default function QrCodeScanner({ onSubmit }: QrCodeScannerProps) {
   // Manipuladores de eventos
   const handleScanSuccess = (qrCodeValue: string) => {
     setError(null);
+    
+    // Verificar se é uma URL e abrir diretamente
+    if (/^https?:\/\//i.test(qrCodeValue)) {
+      console.log('QrCodeScanner: Abrindo URL direto:', qrCodeValue);
+      
+      // Abrir o link em uma nova aba
+      if (typeof window !== 'undefined') {
+        window.open(qrCodeValue, '_blank');
+      }
+    }
+    
+    // Passar o valor para o componente pai
     onSubmit(qrCodeValue);
   };
 

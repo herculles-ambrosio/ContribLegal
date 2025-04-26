@@ -193,14 +193,18 @@ export default function CadastrarDocumento() {
     // Fechar o scanner
     setShowScanner(false);
     
-    console.log('QR Code lido:', result);
+    console.log('Cadastro: QR Code lido:', result);
     
     // Processamento baseado no tipo de QR code
     let qrCodeContent = result.trim();
     
     // Verificar se é um link (URL)
     if (qrCodeContent.startsWith('http://') || qrCodeContent.startsWith('https://')) {
-      console.log('QR Code é uma URL válida, abrindo no navegador:', qrCodeContent);
+      console.log('Cadastro: QR Code é uma URL válida:', qrCodeContent);
+      
+      // Abrir o link em uma nova aba
+      console.log('Cadastro: Abrindo URL em nova aba:', qrCodeContent);
+      window.open(qrCodeContent, '_blank');
       
       // Extrair a chave de acesso para preencher o número do documento
       try {
@@ -219,16 +223,12 @@ export default function CadastrarDocumento() {
         console.error('Erro ao extrair chave de acesso:', error);
       }
       
-      // Abrir o link em uma nova aba
-      window.open(qrCodeContent, '_blank');
-      toast.success('Link do QR Code aberto em uma nova aba. Por favor, copie os dados de lá.');
-      
       return;
     }
     
     // Se não for uma URL, é provavelmente uma chave de acesso direta
     if (/^\d{44}$/.test(qrCodeContent)) {
-      console.log('QR Code parece ser uma chave de acesso direta:', qrCodeContent);
+      console.log('Cadastro: QR Code parece ser uma chave de acesso direta:', qrCodeContent);
       
       setFormData(prev => ({
         ...prev,
@@ -239,54 +239,12 @@ export default function CadastrarDocumento() {
       return;
     }
     
-    // Processamento legado para outros formatos
-    setIsProcessingQRCode(true);
-    toast.loading('Processando QR Code...');
-    
-    try {
-      // Se o tipo de documento selecionado for 'cupom_fiscal', tentar extrair a chave de acesso diretamente
-      if (formData.tipo === 'cupom_fiscal') {
-        const { extractAccessKeyFromQRCode } = await import('@/lib/services/fiscalReceiptService');
-        console.log('Extraindo chave de acesso diretamente...');
-        
-        const accessKey = extractAccessKeyFromQRCode(qrCodeContent);
-        console.log('Chave de acesso extraída:', accessKey);
-        
-        if (accessKey) {
-          // Preencher o número do documento com a chave de acesso extraída
-          setFormData(prev => ({
-            ...prev,
-            numero_documento: accessKey
-          }));
-          
-          toast.dismiss();
-          toast.success('Chave de acesso extraída com sucesso!');
-        }
-      }
-      
-      // Usar como texto direto se nada mais funcionar
-      if (!formData.numero_documento) {
-        setFormData(prev => ({ 
-          ...prev, 
-          numero_documento: qrCodeContent.substring(0, 100) // Limitar o tamanho
-        }));
-      }
-    } catch (error) {
-      console.error('Erro ao processar QR code:', error);
-      toast.dismiss();
-      toast.error('Erro ao processar o QR code');
-      
-      // Mesmo com erro, tentar usar o texto do QR code como número do documento
-      if (!formData.numero_documento) {
-        setFormData(prev => ({ 
-          ...prev, 
-          numero_documento: qrCodeContent.substring(0, 100) // Limitar o tamanho
-        }));
-      }
-    } finally {
-      setIsProcessingQRCode(false);
-      toast.dismiss();
-    }
+    // Usar como texto direto se nada mais funcionar
+    console.log('Cadastro: Usando QR Code como texto direto:', qrCodeContent);
+    setFormData(prev => ({ 
+      ...prev, 
+      numero_documento: qrCodeContent.substring(0, 100) // Limitar o tamanho
+    }));
   };
 
   const handleQrCodeError = (error: any) => {
