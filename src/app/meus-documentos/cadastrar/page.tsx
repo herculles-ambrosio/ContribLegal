@@ -206,33 +206,53 @@ export default function CadastrarDocumento() {
       // Armazenar o link original para uso no campo clicável
       setQrCodeLink(qrCodeContent);
       
-      // Extrair a chave de acesso para preencher o número do documento
       try {
-        const { extractAccessKeyFromQRCode } = await import('@/lib/services/fiscalReceiptService');
-        const accessKey = extractAccessKeyFromQRCode(qrCodeContent);
+        // Importar o serviço de processamento de cupom fiscal
+        const { fetchReceiptPage } = await import('@/lib/services/fiscalReceiptService');
         
-        if (accessKey) {
-          // Salvar no número do documento o link completo
+        // Fazer fetch da página e extrair dados
+        const receiptData = await fetchReceiptPage(qrCodeContent);
+        
+        if (receiptData) {
+          console.log('Dados extraídos com sucesso:', receiptData);
+          
+          // Formatar o valor para o formato brasileiro
+          let formattedValue = '';
+          if (typeof receiptData.receipt.totalValue === 'number' && !isNaN(receiptData.receipt.totalValue)) {
+            formattedValue = receiptData.receipt.totalValue.toLocaleString('pt-BR', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2
+            });
+          }
+          
+          // Atualizar o formulário com os dados extraídos
+          setFormData(prev => ({
+            ...prev,
+            numero_documento: qrCodeContent,
+            valor: formattedValue || prev.valor,
+            data_emissao: receiptData.receipt.issueDate || prev.data_emissao
+          }));
+          
+          toast.success('Dados do cupom fiscal extraídos com sucesso!');
+        } else {
+          // Se não conseguiu extrair dados, usar apenas o link
           setFormData(prev => ({
             ...prev,
             numero_documento: qrCodeContent
           }));
           
-          toast.success('Link do QR code capturado com sucesso!');
-        } else {
-          // Se não conseguiu extrair a chave, usar o link completo
-          setFormData(prev => ({
-            ...prev,
-            numero_documento: qrCodeContent
-          }));
+          toast.error('Não foi possível extrair dados do cupom fiscal. Apenas o link foi salvo.');
         }
       } catch (error) {
-        console.error('Erro ao extrair dados do QR code:', error);
-        // Em caso de erro, usar o link completo
+        console.error('Erro ao processar dados do QR code:', error);
+        
+        // Em caso de erro, usar apenas o link
         setFormData(prev => ({
           ...prev,
           numero_documento: qrCodeContent
         }));
+        
+        toast.error('Erro ao processar QR code. Apenas o link foi salvo.');
       }
       
       return;

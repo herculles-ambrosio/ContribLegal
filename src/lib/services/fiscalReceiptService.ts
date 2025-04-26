@@ -151,9 +151,24 @@ export async function processFiscalReceiptQRCode(qrCodeText: string): Promise<Fi
     // Identificar se é uma URL ou chave direta
     const isUrl = qrCodeText.startsWith('http');
     
-    // Processar dados apenas a partir da URL, sem fetch
+    // Se for uma URL, tentar acessar e extrair informações
     if (isUrl) {
-      console.log('Processando dados da URL sem fazer fetch');
+      console.log('QR Code é uma URL. Tentando extrair dados da página...');
+      
+      try {
+        // Tentar fazer fetch da URL para extrair dados da página
+        const pageData = await fetchReceiptPage(qrCodeText);
+        
+        if (pageData && (pageData.issuer.name || pageData.receipt.totalValue > 0)) {
+          console.log('Dados extraídos com sucesso da página:', pageData);
+          return pageData;
+        } else {
+          console.log('Não foi possível extrair dados da página, usando processamento padrão');
+        }
+      } catch (fetchError) {
+        console.error('Erro ao fazer fetch da página:', fetchError);
+        // Continuar com processamento sem fetch em caso de erro
+      }
       
       // Verificar se o texto contém uma URL válida do portal da SEFAZ
       const isSefaz = qrCodeText.includes('portalsped.fazenda') || 
@@ -249,6 +264,420 @@ export async function processFiscalReceiptQRCode(qrCodeText: string): Promise<Fi
     }
     
     return null;
+  }
+}
+
+/**
+ * Faz fetch da página do QR code e extrai os dados
+ * @param url URL do QR code
+ * @returns Dados extraídos da página ou null em caso de erro
+ */
+export async function fetchReceiptPage(url: string): Promise<FiscalReceiptData | null> {
+  try {
+    console.log('Iniciando fetch da URL do QR code:', url);
+    
+    // Extrair a chave de acesso para uso posterior
+    const accessKey = extractAccessKeyFromQRCode(url);
+    
+    // Verificar se é PDF ou HTML
+    const isPdf = url.toLowerCase().includes('.pdf') || url.toLowerCase().includes('application/pdf');
+    
+    if (isPdf) {
+      console.log('URL parece ser um PDF. A extração de dados de PDFs não é suportada diretamente.');
+      // Podemos implementar parser de PDF no futuro se necessário
+      return null;
+    }
+    
+    // Usar um proxy CORS para evitar problemas de CORS
+    const corsProxyUrl = 'https://corsproxy.io/?';
+    const fetchUrl = url.includes('portalsped.fazenda') || url.includes('sefaz') 
+      ? corsProxyUrl + encodeURIComponent(url)
+      : url;
+    
+    console.log('Usando URL para fetch:', fetchUrl);
+    
+    // Fazer fetch da página HTML com timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 segundos timeout
+    
+    try {
+      const response = await fetch(fetchUrl, {
+        method: 'GET',
+        signal: controller.signal,
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        console.error('Erro ao fazer fetch da página:', response.status, response.statusText);
+        return null;
+      }
+      
+      // Obter o HTML da página
+      const html = await response.text();
+      console.log('HTML recebido, tamanho:', html.length);
+      
+      // Usar Cheerio para fazer o parsing do HTML
+      return extractDataFromHtml(html, url, accessKey);
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      
+      // Se falhar com o proxy, tentar diretamente
+      if (fetchUrl.includes(corsProxyUrl)) {
+        console.log('Fetch com proxy falhou, tentando direto...');
+        
+        const directResponse = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Accept': 'text/html,application/xhtml+xml,application/xml',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+          }
+        });
+        
+        if (!directResponse.ok) {
+          console.error('Erro ao fazer fetch direto da página:', directResponse.status, directResponse.statusText);
+          return null;
+        }
+        
+        const html = await directResponse.text();
+        console.log('HTML recebido (direto), tamanho:', html.length);
+        
+        return extractDataFromHtml(html, url, accessKey);
+      }
+      
+      throw fetchError;
+    }
+  } catch (error) {
+    console.error('Erro ao fazer fetch ou processar página:', error);
+    
+    // Extrair a chave de acesso novamente no escopo do catch
+    const accessKey = extractAccessKeyFromQRCode(url);
+    
+    // Criar dados básicos do valor extraído da URL
+    const totalValue = extractValueFromUrl(url);
+    const issueDate = extractDateFromUrl(url) || formatCurrentDate();
+    
+    if (totalValue > 0 || accessKey) {
+      console.log('Usando dados extraídos apenas da URL');
+      return {
+        consumer: {
+          name: 'CONSUMIDOR NÃO IDENTIFICADO',
+          documentNumber: 'NÃO INFORMADO',
+          state: 'MG'
+        },
+        issuer: {
+          name: 'ESTABELECIMENTO COMERCIAL',
+          documentNumber: 'NÃO INFORMADO'
+        },
+        receipt: {
+          accessKey: accessKey || 'NÃO IDENTIFICADO',
+          totalValue: totalValue,
+          issueDate: issueDate
+        },
+        qrCodeUrl: url
+      };
+    }
+    
+    return null;
+  }
+}
+
+/**
+ * Extrai dados do cupom fiscal a partir do HTML da página
+ * @param html HTML da página
+ * @param url URL original
+ * @param accessKey Chave de acesso extraída anteriormente
+ * @returns Dados estruturados do cupom fiscal
+ */
+function extractDataFromHtml(html: string, url: string, accessKey: string): FiscalReceiptData {
+  console.log('Extraindo dados do HTML da página...');
+  
+  // Carregar HTML no Cheerio
+  const $ = load(html);
+  
+  // Valores padrão que serão preenchidos com dados extraídos
+  let issuerName = 'ESTABELECIMENTO COMERCIAL';
+  let totalValue = 0;
+  let issueDate = '';
+  
+  // Tentar extrair informações do HTML
+  
+  // 1. Valor Total - procurar por padrões comuns
+  const valorPatterns = [
+    'Valor Total R$', 'VALOR TOTAL', 'Total R$', 'Valor a Pagar', 'VLR. TOTAL R$', 
+    'VALOR A PAGAR', 'TOTAL', 'Valor Pago', 'VALOR PAGO', 'VALOR TOTAL DA NF',
+    'VALOR DA NOTA', 'VALOR CUPOM', 'TOTAL DA COMPRA', 'TOTAL DA NF', 'Valor (R$)'
+  ];
+  
+  for (const pattern of valorPatterns) {
+    // Procurar pelo texto do padrão
+    const valorElement = $('*:contains("' + pattern + '")');
+    
+    if (valorElement.length > 0) {
+      // Para cada elemento encontrado, buscar um valor monetário próximo
+      valorElement.each((_, el) => {
+        if (totalValue > 0) return; // Se já encontrou um valor, não continuar
+        
+        // Texto do elemento e dos irmãos próximos
+        const text = $(el).text().trim();
+        const nextText = $(el).next().text().trim();
+        const parentText = $(el).parent().text().trim();
+        
+        // Verificar se o próprio texto contém um valor monetário
+        let moneyRegex = /R\$\s*([\d.,]+)|(\d+[,.]\d{2})/i;
+        let match = text.match(moneyRegex);
+        
+        if (match && (match[1] || match[2])) {
+          // Encontrou um valor monetário
+          const valueStr = (match[1] || match[2]).replace(',', '.');
+          const parsedValue = parseFloat(valueStr);
+          if (!isNaN(parsedValue) && parsedValue > 0) {
+            totalValue = parsedValue;
+            console.log('Valor total encontrado no próprio elemento:', totalValue);
+          }
+        } else if (nextText) {
+          // Verificar no próximo elemento
+          match = nextText.match(moneyRegex);
+          if (match && (match[1] || match[2])) {
+            const valueStr = (match[1] || match[2]).replace(',', '.');
+            const parsedValue = parseFloat(valueStr);
+            if (!isNaN(parsedValue) && parsedValue > 0) {
+              totalValue = parsedValue;
+              console.log('Valor total encontrado no elemento irmão:', totalValue);
+            }
+          }
+        } else {
+          // Verificar no texto do elemento pai para contexto maior
+          match = parentText.match(moneyRegex);
+          if (match && (match[1] || match[2])) {
+            const valueStr = (match[1] || match[2]).replace(',', '.');
+            const parsedValue = parseFloat(valueStr);
+            if (!isNaN(parsedValue) && parsedValue > 0) {
+              totalValue = parsedValue;
+              console.log('Valor total encontrado no elemento pai:', totalValue);
+            }
+          }
+        }
+      });
+    }
+    
+    if (totalValue > 0) break; // Sair do loop se encontrou um valor
+  }
+  
+  // 2. Nome do Emitente
+  const emitentePattterns = [
+    'EMITENTE', 'RAZÃO SOCIAL', 'ESTABELECIMENTO', 'EMPRESA',
+    'NOME EMPRESARIAL', 'EMISSOR', 'VENDEDOR'
+  ];
+  
+  for (const pattern of emitentePattterns) {
+    const emitenteElement = $('*:contains("' + pattern + '")');
+    
+    if (emitenteElement.length > 0) {
+      emitenteElement.each((_, el) => {
+        if (issuerName !== 'ESTABELECIMENTO COMERCIAL') return; // Se já encontrou, não continuar
+        
+        // Verificar elemento, próximo elemento e parentes
+        const nextEl = $(el).next();
+        const parentEl = $(el).parent();
+        
+        // Primeiro verificar o próximo elemento que frequentemente contém o nome
+        if (nextEl.length > 0) {
+          const nameText = nextEl.text().trim();
+          if (nameText && nameText.length > 3 && !/^\d+$/.test(nameText)) {
+            issuerName = nameText;
+            console.log('Nome do emitente encontrado no próximo elemento:', issuerName);
+          }
+        }
+        
+        // Se não encontrou no próximo, verificar no texto do pai
+        if (issuerName === 'ESTABELECIMENTO COMERCIAL' && parentEl.length > 0) {
+          const parentText = parentEl.text().trim();
+          
+          // Remover o texto do padrão para isolar o nome
+          const nameCandidate = parentText.replace(new RegExp(pattern, 'i'), '').trim();
+          if (nameCandidate && nameCandidate.length > 3 && !/^\d+$/.test(nameCandidate)) {
+            // Limitar a um comprimento razoável
+            issuerName = nameCandidate.substring(0, 100);
+            console.log('Nome do emitente encontrado no elemento pai:', issuerName);
+          }
+        }
+      });
+    }
+    
+    if (issuerName !== 'ESTABELECIMENTO COMERCIAL') break;
+  }
+  
+  // 3. Data de Emissão
+  const dataPatterns = [
+    'DATA DE EMISSÃO', 'EMISSÃO', 'DATA EMISSÃO', 'DATA', 
+    'EMITIDO EM', 'DATA E HORA', 'DATA/HORA', 'DT. EMISSÃO',
+    'EMITIDA EM', 'DATA DA COMPRA', 'DATA DA VENDA'
+  ];
+  
+  for (const pattern of dataPatterns) {
+    const dataElement = $('*:contains("' + pattern + '")');
+    
+    if (dataElement.length > 0) {
+      dataElement.each((_, el) => {
+        if (issueDate) return; // Se já encontrou, não continuar
+        
+        // Texto do elemento e dos irmãos próximos
+        const text = $(el).text().trim();
+        const nextText = $(el).next().text().trim();
+        const parentText = $(el).parent().text().trim();
+        
+        // Regex para data no formato DD/MM/YYYY ou DD-MM-YYYY ou YYYY-MM-DD
+        let dateRegex = /(\d{2}\/\d{2}\/\d{4}|\d{2}-\d{2}-\d{4}|\d{4}-\d{2}-\d{2})/;
+        let match = text.match(dateRegex);
+        
+        if (match && match[1]) {
+          issueDate = formatDateString(match[1]);
+          console.log('Data de emissão encontrada no próprio elemento:', issueDate);
+        } else if (nextText) {
+          match = nextText.match(dateRegex);
+          if (match && match[1]) {
+            issueDate = formatDateString(match[1]);
+            console.log('Data de emissão encontrada no elemento irmão:', issueDate);
+          }
+        } else {
+          match = parentText.match(dateRegex);
+          if (match && match[1]) {
+            issueDate = formatDateString(match[1]);
+            console.log('Data de emissão encontrada no elemento pai:', issueDate);
+          }
+        }
+        
+        // Se ainda não encontrou, tentar formatos diferentes como DD/MM/YY ou outros formatos
+        if (!issueDate) {
+          // Regex para datas no formato DD/MM/YY
+          const alternativeDateRegex = /(\d{1,2}\/\d{1,2}\/\d{2}|\d{1,2}\.\d{1,2}\.\d{2,4}|\d{1,2}\-\d{1,2}\-\d{2,4})/;
+          
+          match = text.match(alternativeDateRegex);
+          if (match && match[1]) {
+            issueDate = formatDateString(match[1]);
+            console.log('Data de emissão alternativa encontrada no próprio elemento:', issueDate);
+          } else if (nextText) {
+            match = nextText.match(alternativeDateRegex);
+            if (match && match[1]) {
+              issueDate = formatDateString(match[1]);
+              console.log('Data de emissão alternativa encontrada no elemento irmão:', issueDate);
+            }
+          } else {
+            match = parentText.match(alternativeDateRegex);
+            if (match && match[1]) {
+              issueDate = formatDateString(match[1]);
+              console.log('Data de emissão alternativa encontrada no elemento pai:', issueDate);
+            }
+          }
+        }
+      });
+    }
+    
+    if (issueDate) break;
+  }
+  
+  // Se não conseguiu extrair a data do HTML, tentar extrair da URL
+  if (!issueDate) {
+    issueDate = extractDateFromUrl(url) || formatCurrentDate();
+  }
+  
+  // Retornar os dados extraídos
+  return {
+    consumer: {
+      name: 'CONSUMIDOR NÃO IDENTIFICADO',
+      documentNumber: 'NÃO INFORMADO',
+      state: 'MG'
+    },
+    issuer: {
+      name: issuerName,
+      documentNumber: 'NÃO INFORMADO'
+    },
+    receipt: {
+      accessKey: accessKey || 'NÃO IDENTIFICADO',
+      totalValue: totalValue,
+      issueDate: issueDate
+    },
+    qrCodeUrl: url
+  };
+}
+
+/**
+ * Formata uma string de data para o formato padrão YYYY-MM-DD
+ * @param dateString String de data em diferentes formatos
+ * @returns Data formatada
+ */
+function formatDateString(dateString: string): string {
+  try {
+    // Vários formatos possíveis
+    if (dateString.includes('/')) {
+      // Formato DD/MM/YYYY ou DD/MM/YY
+      const parts = dateString.split('/');
+      if (parts.length === 3) {
+        let year = parts[2];
+        const day = parts[0].padStart(2, '0');
+        const month = parts[1].padStart(2, '0');
+        
+        // Se o ano tem 2 dígitos, assumir que é 20XX para datas recentes
+        if (year.length === 2) {
+          year = `20${year}`;
+        }
+        
+        return `${year}-${month}-${day}`;
+      }
+    } else if (dateString.includes('-')) {
+      // Verificar se já está no formato YYYY-MM-DD
+      const parts = dateString.split('-');
+      if (parts.length === 3 && parts[0].length === 4) {
+        return dateString; // Já está no formato correto
+      } else if (parts.length === 3) {
+        // Formato DD-MM-YYYY ou DD-MM-YY
+        let year = parts[2];
+        const day = parts[0].padStart(2, '0');
+        const month = parts[1].padStart(2, '0');
+        
+        // Se o ano tem 2 dígitos, assumir que é 20XX
+        if (year.length === 2) {
+          year = `20${year}`;
+        }
+        
+        return `${year}-${month}-${day}`;
+      }
+    } else if (dateString.includes('.')) {
+      // Formato DD.MM.YYYY ou DD.MM.YY
+      const parts = dateString.split('.');
+      if (parts.length === 3) {
+        let year = parts[2];
+        const day = parts[0].padStart(2, '0');
+        const month = parts[1].padStart(2, '0');
+        
+        // Se o ano tem 2 dígitos, assumir que é 20XX
+        if (year.length === 2) {
+          year = `20${year}`;
+        }
+        
+        return `${year}-${month}-${day}`;
+      }
+    }
+    
+    // Se não conseguiu formatar, tentar usar o Date
+    const date = new Date(dateString);
+    if (!isNaN(date.getTime())) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+    
+    // Se não conseguiu formatar, retornar como está
+    return dateString;
+  } catch (error) {
+    console.error('Erro ao formatar string de data:', error);
+    return dateString;
   }
 }
 

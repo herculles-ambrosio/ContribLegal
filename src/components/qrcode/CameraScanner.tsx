@@ -153,38 +153,26 @@ export default function CameraScanner({ onScanSuccess, onError }: CameraScannerP
 
   // Função para abrir URL com força máxima
   const forceOpenUrl = (url: string) => {
-    console.log('Forçando abertura da URL:', url);
+    console.log('URL de QR Code detectada:', url);
     lastScannedUrl = url; // Armazenar globalmente
     
-    // Tentar todos os métodos possíveis para abrir a URL
-    try {
-      // Método 1: window.open normal
-      const newWindow = window.open(url, '_blank');
-      
-      // Método 2: Se falhou, tentar com location.href em um iframe
-      if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-        console.warn('Método 1 falhou (popup bloqueado), tentando método alternativo');
+    // Não abrir automaticamente, apenas processar
+    // O componente QrCodeScanner fará a abertura e extração de dados
+    if (html5QrCodeRef.current) {
+      html5QrCodeRef.current.stop().then(() => {
+        console.log('Scanner parado após detectar URL');
+        setScannerStarted(false);
         
-        // Criar um iframe temporário e direcioná-lo
-        const iframe = document.createElement('iframe');
-        iframe.style.display = 'none';
-        document.body.appendChild(iframe);
-        iframe.src = url;
-        
-        // Mostrar alerta com o link
-        alert(`Link detectado! Clique OK para abrir: ${url}`);
-        
-        // Tentar abrir novamente após a interação do usuário
-        window.open(url, '_blank');
-        
-        // Tentar abrir após um tempo
-        setTimeout(() => {
-          window.open(url, '_blank');
-        }, 500);
-      }
-    } catch (error) {
-      console.error('Todos os métodos falharam. Erro ao abrir URL:', error);
-      alert(`Não foi possível abrir o link automaticamente!\n\nLink: ${url}\n\nCopie e cole no navegador.`);
+        // Passar o link para o componente pai
+        onScanSuccess(url);
+      }).catch(err => {
+        console.error('Erro ao parar scanner após detectar URL:', err);
+        // Mesmo com erro, passar o URL para o componente pai
+        onScanSuccess(url);
+      });
+    } else {
+      // Mesmo sem scanner, passar o URL para o componente pai
+      onScanSuccess(url);
     }
   };
 
@@ -223,17 +211,6 @@ export default function CameraScanner({ onScanSuccess, onError }: CameraScannerP
             
             // Abrir a URL com força máxima
             forceOpenUrl(processedText);
-            
-            // Parar o scanner após detectar um QR code válido
-            if (html5QrCodeRef.current) {
-              html5QrCodeRef.current.stop().then(() => {
-                console.log('Scanner parado após detectar URL');
-                setScannerStarted(false);
-                
-                // Passar o link para o componente pai
-                onScanSuccess(processedText);
-              });
-            }
           } else {
             // Continuar com o processamento normal
             handleScanSuccess(processedText);
