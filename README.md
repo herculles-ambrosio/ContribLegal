@@ -1,4 +1,68 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ContribLegal
+
+Plataforma de gestão e validação de documentos fiscais para contribuintes.
+
+## Tecnologias
+
+- Next.js 15
+- TypeScript
+- Tailwind CSS
+- Supabase
+
+## Funcionalidades
+
+- Cadastro e autenticação de usuários
+- Upload e gerenciamento de documentos fiscais
+- Validação de documentos
+- Scanner de QR code para cupons fiscais
+- Painel administrativo
+
+## Instalação
+
+```bash
+# Clonar o repositório
+git clone https://github.com/seu-usuario/ContribLegal.git
+
+# Entrar no diretório
+cd ContribLegal
+
+# Instalar dependências
+npm install
+
+# Configurar variáveis de ambiente
+cp .env.example .env.local
+
+# Iniciar servidor de desenvolvimento
+npm run dev
+```
+
+## Estrutura do Projeto
+
+```
+ContribLegal/
+├── public/             # Arquivos estáticos
+├── src/                # Código-fonte
+│   ├── app/            # Rotas do Next.js
+│   ├── components/     # Componentes React
+│   ├── lib/            # Bibliotecas e utilidades
+│   └── styles/         # Estilos CSS
+├── .env.example        # Exemplo de variáveis de ambiente
+└── README.md           # Este arquivo
+```
+
+## Componentes UI
+
+O projeto inclui diversos componentes UI reutilizáveis:
+
+- Button
+- Card
+- Input
+- Tabs
+- Modal
+
+## Licença
+
+Este projeto está licenciado sob a licença MIT.
 
 ## Getting Started
 
