@@ -1,10 +1,23 @@
 // app/page.js
-import { redirect } from 'next/navigation';
+'use client';
+
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
 export default function Home() {
-  // Redirecionar para a página de dashboard em vez de redirecionar para si mesmo
-  redirect('/dashboard');
+  const router = useRouter();
   
-  // Este trecho nunca será executado devido ao redirecionamento acima
-  return null;
+  useEffect(() => {
+    router.push('/dashboard');
+  }, [router]);
+  
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-blue-50">
+      <div className="text-center">
+        <h1 className="text-4xl font-bold text-blue-600 mb-4">Contribuinte Legal</h1>
+        <div className="animate-spin h-12 w-12 border-4 border-blue-500 rounded-full border-t-transparent mx-auto mb-4"></div>
+        <p className="text-gray-600">Iniciando o sistema...</p>
+      </div>
+    </div>
+  );
 } 
