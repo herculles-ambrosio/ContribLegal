@@ -52,6 +52,7 @@ export default function CadastrarDocumento() {
   const [isProcessingQRCode, setIsProcessingQRCode] = useState(false);
   const [fiscalReceiptData, setFiscalReceiptData] = useState<FiscalReceiptData | null>(null);
   const [showFiscalReceiptModal, setShowFiscalReceiptModal] = useState(false);
+  const [qrCodeLink, setQrCodeLink] = useState<string | null>(null);
 
   const tiposDocumento = [
     { value: 'nota_servico', label: 'Nota Fiscal de Serviço' },
@@ -202,9 +203,8 @@ export default function CadastrarDocumento() {
     if (qrCodeContent.startsWith('http://') || qrCodeContent.startsWith('https://')) {
       console.log('Cadastro: QR Code é uma URL válida:', qrCodeContent);
       
-      // Abrir o link em uma nova aba
-      console.log('Cadastro: Abrindo URL em nova aba:', qrCodeContent);
-      window.open(qrCodeContent, '_blank');
+      // Armazenar o link original para uso no campo clicável
+      setQrCodeLink(qrCodeContent);
       
       // Extrair a chave de acesso para preencher o número do documento
       try {
@@ -212,15 +212,27 @@ export default function CadastrarDocumento() {
         const accessKey = extractAccessKeyFromQRCode(qrCodeContent);
         
         if (accessKey) {
+          // Salvar no número do documento o link completo
           setFormData(prev => ({
             ...prev,
-            numero_documento: accessKey
+            numero_documento: qrCodeContent
           }));
           
-          toast.success('Chave de acesso extraída com sucesso!');
+          toast.success('Link do QR code capturado com sucesso!');
+        } else {
+          // Se não conseguiu extrair a chave, usar o link completo
+          setFormData(prev => ({
+            ...prev,
+            numero_documento: qrCodeContent
+          }));
         }
       } catch (error) {
-        console.error('Erro ao extrair chave de acesso:', error);
+        console.error('Erro ao extrair dados do QR code:', error);
+        // Em caso de erro, usar o link completo
+        setFormData(prev => ({
+          ...prev,
+          numero_documento: qrCodeContent
+        }));
       }
       
       return;
@@ -561,6 +573,7 @@ export default function CadastrarDocumento() {
                   required
                   variant="dark"
                 />
+                {qrCodeLink && <QrCodeLink url={qrCodeLink} />}
               </div>
               
               <Input
@@ -733,4 +746,22 @@ export default function CadastrarDocumento() {
       </div>
     </Layout>
   );
-} 
+}
+
+// Adicionar componente para link clicável
+const QrCodeLink = ({ url }: { url: string }) => {
+  const handleClick = () => {
+    window.open(url, '_blank');
+  };
+  
+  return (
+    <div 
+      className="p-2 mt-2 text-xs bg-blue-100 border border-blue-300 rounded cursor-pointer text-blue-800 hover:bg-blue-200"
+      onClick={handleClick}
+    >
+      <div className="font-bold mb-1">Link do QR Code:</div>
+      <div className="truncate">{url}</div>
+      <div className="text-center mt-1 text-blue-600 font-semibold">⟨ Clique para abrir ⟩</div>
+    </div>
+  );
+}; 

@@ -10,6 +10,10 @@ export interface CameraScannerProps {
   onError?: (errorMessage: string) => void;
 }
 
+// Inicializar uma variável global para armazenar o último link lido
+// Isso permite acessá-lo fora do contexto do scanner
+let lastScannedUrl = '';
+
 export default function CameraScanner({ onScanSuccess, onError }: CameraScannerProps) {
   const [isInitializing, setIsInitializing] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -147,6 +151,43 @@ export default function CameraScanner({ onScanSuccess, onError }: CameraScannerP
     return cleanText;
   };
 
+  // Função para abrir URL com força máxima
+  const forceOpenUrl = (url: string) => {
+    console.log('Forçando abertura da URL:', url);
+    lastScannedUrl = url; // Armazenar globalmente
+    
+    // Tentar todos os métodos possíveis para abrir a URL
+    try {
+      // Método 1: window.open normal
+      const newWindow = window.open(url, '_blank');
+      
+      // Método 2: Se falhou, tentar com location.href em um iframe
+      if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+        console.warn('Método 1 falhou (popup bloqueado), tentando método alternativo');
+        
+        // Criar um iframe temporário e direcioná-lo
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        document.body.appendChild(iframe);
+        iframe.src = url;
+        
+        // Mostrar alerta com o link
+        alert(`Link detectado! Clique OK para abrir: ${url}`);
+        
+        // Tentar abrir novamente após a interação do usuário
+        window.open(url, '_blank');
+        
+        // Tentar abrir após um tempo
+        setTimeout(() => {
+          window.open(url, '_blank');
+        }, 500);
+      }
+    } catch (error) {
+      console.error('Todos os métodos falharam. Erro ao abrir URL:', error);
+      alert(`Não foi possível abrir o link automaticamente!\n\nLink: ${url}\n\nCopie e cole no navegador.`);
+    }
+  };
+
   const startScanner = async () => {
     if (!selectedCamera || !html5QrCodeRef.current) return;
     
@@ -180,24 +221,23 @@ export default function CameraScanner({ onScanSuccess, onError }: CameraScannerP
           if (/^https?:\/\//i.test(processedText)) {
             console.log('URL detectada, abrindo IMEDIATAMENTE:', processedText);
             
-            // Usar setTimeout para garantir que a janela seja aberta
-            // Alguns navegadores podem bloquear popups em callbacks diretos
-            setTimeout(() => {
-              try {
-                const newWindow = window.open(processedText, '_blank');
-                if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-                  console.warn('Popup possivelmente bloqueado pelo navegador');
-                  alert(`Link detectado! Abra manualmente: ${processedText}`);
-                }
-              } catch (error) {
-                console.error('Erro ao abrir URL:', error);
-                alert(`Erro ao abrir link. Copie e abra manualmente: ${processedText}`);
-              }
-            }, 100);
+            // Abrir a URL com força máxima
+            forceOpenUrl(processedText);
+            
+            // Parar o scanner após detectar um QR code válido
+            if (html5QrCodeRef.current) {
+              html5QrCodeRef.current.stop().then(() => {
+                console.log('Scanner parado após detectar URL');
+                setScannerStarted(false);
+                
+                // Passar o link para o componente pai
+                onScanSuccess(processedText);
+              });
+            }
+          } else {
+            // Continuar com o processamento normal
+            handleScanSuccess(processedText);
           }
-          
-          // Continuar com o processamento normal
-          handleScanSuccess(processedText);
         },
         handleScanFailure
       );
