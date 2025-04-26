@@ -273,117 +273,172 @@ export async function processFiscalReceiptQRCode(qrCodeText: string): Promise<Fi
  * @returns Dados extraídos da página ou null em caso de erro
  */
 export async function fetchReceiptPage(url: string): Promise<FiscalReceiptData | null> {
-  try {
-    console.log('Iniciando fetch da URL do QR code:', url);
-    
-    // Extrair a chave de acesso para uso posterior
-    const accessKey = extractAccessKeyFromQRCode(url);
-    
+  console.log('Iniciando fetch da URL do QR code:', url);
+  
+  // Extrair a chave de acesso para uso posterior
+  const accessKey = extractAccessKeyFromQRCode(url);
+  
+  try {    
     // Verificar se é PDF ou HTML
     const isPdf = url.toLowerCase().includes('.pdf') || url.toLowerCase().includes('application/pdf');
     
     if (isPdf) {
-      console.log('URL parece ser um PDF. A extração de dados de PDFs não é suportada diretamente.');
-      // Podemos implementar parser de PDF no futuro se necessário
-      return null;
+      console.log('URL parece ser um PDF. Tentando apenas extrair dados da URL...');
+      // Para PDFs, tentamos apenas usar os dados da URL
+      return createBasicReceiptData(url, accessKey);
     }
     
-    // Usar um proxy CORS para evitar problemas de CORS
-    const corsProxyUrl = 'https://corsproxy.io/?';
-    const fetchUrl = url.includes('portalsped.fazenda') || url.includes('sefaz') 
-      ? corsProxyUrl + encodeURIComponent(url)
-      : url;
-    
-    console.log('Usando URL para fetch:', fetchUrl);
-    
-    // Fazer fetch da página HTML com timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 segundos timeout
-    
+    // ABORDAGEM 1: Tentar acessar diretamente
+    // Fazendo primeiro request sem proxy para páginas que não exigem cors
     try {
-      const response = await fetch(fetchUrl, {
+      console.log('Tentativa 1: Fazendo request direto para a URL:', url);
+      const directResponse = await fetchWithTimeout(url, {
         method: 'GET',
-        signal: controller.signal,
         headers: {
           'Accept': 'text/html,application/xhtml+xml,application/xml',
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
-      });
+      }, 5000); // 5 segundos timeout
       
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        console.error('Erro ao fazer fetch da página:', response.status, response.statusText);
-        return null;
-      }
-      
-      // Obter o HTML da página
-      const html = await response.text();
-      console.log('HTML recebido, tamanho:', html.length);
-      
-      // Usar Cheerio para fazer o parsing do HTML
-      return extractDataFromHtml(html, url, accessKey);
-    } catch (fetchError) {
-      clearTimeout(timeoutId);
-      
-      // Se falhar com o proxy, tentar diretamente
-      if (fetchUrl.includes(corsProxyUrl)) {
-        console.log('Fetch com proxy falhou, tentando direto...');
-        
-        const directResponse = await fetch(url, {
-          method: 'GET',
-          headers: {
-            'Accept': 'text/html,application/xhtml+xml,application/xml',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-          }
-        });
-        
-        if (!directResponse.ok) {
-          console.error('Erro ao fazer fetch direto da página:', directResponse.status, directResponse.statusText);
-          return null;
-        }
-        
+      if (directResponse.ok) {
         const html = await directResponse.text();
         console.log('HTML recebido (direto), tamanho:', html.length);
         
-        return extractDataFromHtml(html, url, accessKey);
+        if (html.length > 100) { // Verificar se não é uma resposta vazia
+          const data = extractDataFromHtml(html, url, accessKey);
+          if (data.receipt.totalValue > 0 || data.issuer.name !== 'ESTABELECIMENTO COMERCIAL') {
+            console.log('Dados extraídos com sucesso (direto):', data);
+            return data;
+          }
+        }
       }
-      
-      throw fetchError;
+    } catch (directError) {
+      console.log('Erro no request direto:', directError);
+      // Continuar para próxima abordagem
     }
+    
+    // ABORDAGEM 2: Usar proxy CORS
+    try {
+      console.log('Tentativa 2: Usando proxy CORS');
+      
+      // Usar um proxy CORS para evitar problemas de CORS
+      const corsProxyUrl = 'https://corsproxy.io/?';
+      const fetchUrl = corsProxyUrl + encodeURIComponent(url);
+      
+      console.log('Usando URL com proxy para fetch:', fetchUrl);
+      
+      const proxyResponse = await fetchWithTimeout(fetchUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+      }, 10000); // 10 segundos timeout
+      
+      if (proxyResponse.ok) {
+        const html = await proxyResponse.text();
+        console.log('HTML recebido (via proxy), tamanho:', html.length);
+        
+        if (html.length > 100) {
+          const data = extractDataFromHtml(html, url, accessKey);
+          if (data.receipt.totalValue > 0 || data.issuer.name !== 'ESTABELECIMENTO COMERCIAL') {
+            console.log('Dados extraídos com sucesso (via proxy):', data);
+            return data;
+          }
+        }
+      }
+    } catch (proxyError) {
+      console.log('Erro no request via proxy:', proxyError);
+      // Continuar para próxima abordagem
+    }
+    
+    // ABORDAGEM 3: Usar proxy alternativo
+    try {
+      console.log('Tentativa 3: Usando proxy alternativo');
+      
+      // Tentar outro proxy
+      const altProxyUrl = 'https://api.allorigins.win/raw?url=';
+      const altFetchUrl = altProxyUrl + encodeURIComponent(url);
+      
+      console.log('Usando URL com proxy alternativo:', altFetchUrl);
+      
+      const altProxyResponse = await fetchWithTimeout(altFetchUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+      }, 10000);
+      
+      if (altProxyResponse.ok) {
+        const html = await altProxyResponse.text();
+        console.log('HTML recebido (via proxy alternativo), tamanho:', html.length);
+        
+        if (html.length > 100) {
+          const data = extractDataFromHtml(html, url, accessKey);
+          if (data.receipt.totalValue > 0 || data.issuer.name !== 'ESTABELECIMENTO COMERCIAL') {
+            console.log('Dados extraídos com sucesso (via proxy alternativo):', data);
+            return data;
+          }
+        }
+      }
+    } catch (altProxyError) {
+      console.log('Erro no request via proxy alternativo:', altProxyError);
+    }
+    
+    // Se chegou até aqui, nenhuma abordagem funcionou
+    console.warn('Nenhuma abordagem de fetch funcionou. Usando dados básicos da URL');
+    return createBasicReceiptData(url, accessKey);
+    
   } catch (error) {
     console.error('Erro ao fazer fetch ou processar página:', error);
-    
-    // Extrair a chave de acesso novamente no escopo do catch
-    const accessKey = extractAccessKeyFromQRCode(url);
-    
-    // Criar dados básicos do valor extraído da URL
-    const totalValue = extractValueFromUrl(url);
-    const issueDate = extractDateFromUrl(url) || formatCurrentDate();
-    
-    if (totalValue > 0 || accessKey) {
-      console.log('Usando dados extraídos apenas da URL');
-      return {
-        consumer: {
-          name: 'CONSUMIDOR NÃO IDENTIFICADO',
-          documentNumber: 'NÃO INFORMADO',
-          state: 'MG'
-        },
-        issuer: {
-          name: 'ESTABELECIMENTO COMERCIAL',
-          documentNumber: 'NÃO INFORMADO'
-        },
-        receipt: {
-          accessKey: accessKey || 'NÃO IDENTIFICADO',
-          totalValue: totalValue,
-          issueDate: issueDate
-        },
-        qrCodeUrl: url
-      };
-    }
-    
-    return null;
+    return createBasicReceiptData(url, accessKey);
   }
+}
+
+/**
+ * Versão de fetch com timeout
+ */
+async function fetchWithTimeout(url: string, options: RequestInit, timeout: number): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
+ * Cria dados básicos do cupom fiscal usando apenas URL e chave de acesso
+ */
+function createBasicReceiptData(url: string, accessKey: string): FiscalReceiptData {
+  // Tentar extrair dados básicos da URL
+  const totalValue = extractValueFromUrl(url);
+  const issueDate = extractDateFromUrl(url) || formatCurrentDate();
+  
+  return {
+    consumer: {
+      name: 'CONSUMIDOR NÃO IDENTIFICADO',
+      documentNumber: 'NÃO INFORMADO',
+      state: 'MG'
+    },
+    issuer: {
+      name: 'ESTABELECIMENTO COMERCIAL',
+      documentNumber: 'NÃO INFORMADO'
+    },
+    receipt: {
+      accessKey: accessKey || 'NÃO IDENTIFICADO',
+      totalValue: totalValue,
+      issueDate: issueDate
+    },
+    qrCodeUrl: url
+  };
 }
 
 /**
@@ -401,6 +456,7 @@ function extractDataFromHtml(html: string, url: string, accessKey: string): Fisc
   
   // Valores padrão que serão preenchidos com dados extraídos
   let issuerName = 'ESTABELECIMENTO COMERCIAL';
+  let issuerDoc = 'NÃO INFORMADO';
   let totalValue = 0;
   let issueDate = '';
   
@@ -410,9 +466,11 @@ function extractDataFromHtml(html: string, url: string, accessKey: string): Fisc
   const valorPatterns = [
     'Valor Total R$', 'VALOR TOTAL', 'Total R$', 'Valor a Pagar', 'VLR. TOTAL R$', 
     'VALOR A PAGAR', 'TOTAL', 'Valor Pago', 'VALOR PAGO', 'VALOR TOTAL DA NF',
-    'VALOR DA NOTA', 'VALOR CUPOM', 'TOTAL DA COMPRA', 'TOTAL DA NF', 'Valor (R$)'
+    'VALOR DA NOTA', 'VALOR CUPOM', 'TOTAL DA COMPRA', 'TOTAL DA NF', 'Valor (R$)',
+    'VALOR TOTAL DO DOCUMENTO'
   ];
   
+  // Primeiro, tentar encontrar valores monetários específicos em elementos com os padrões
   for (const pattern of valorPatterns) {
     // Procurar pelo texto do padrão
     const valorElement = $('*:contains("' + pattern + '")');
@@ -427,38 +485,42 @@ function extractDataFromHtml(html: string, url: string, accessKey: string): Fisc
         const nextText = $(el).next().text().trim();
         const parentText = $(el).parent().text().trim();
         
-        // Verificar se o próprio texto contém um valor monetário
-        let moneyRegex = /R\$\s*([\d.,]+)|(\d+[,.]\d{2})/i;
-        let match = text.match(moneyRegex);
+        // Extrair valor monetário - padrões comuns no Brasil: R$ 123,45 ou 123,45
+        const moneyRegex = /R\$\s*([\d.,]+)|(\d+[,.]\d{2})/i;
         
+        // Verificar no próprio texto do elemento
+        let match = text.match(moneyRegex);
         if (match && (match[1] || match[2])) {
-          // Encontrou um valor monetário
-          const valueStr = (match[1] || match[2]).replace(',', '.');
+          const valueStr = (match[1] || match[2]).replace(/\./g, '').replace(',', '.');
           const parsedValue = parseFloat(valueStr);
           if (!isNaN(parsedValue) && parsedValue > 0) {
             totalValue = parsedValue;
-            console.log('Valor total encontrado no próprio elemento:', totalValue);
+            console.log('Valor encontrado em:', pattern, '->', totalValue);
           }
-        } else if (nextText) {
-          // Verificar no próximo elemento
+        }
+        
+        // Verificar nos elementos próximos
+        if (totalValue === 0 && nextText) {
           match = nextText.match(moneyRegex);
           if (match && (match[1] || match[2])) {
-            const valueStr = (match[1] || match[2]).replace(',', '.');
+            const valueStr = (match[1] || match[2]).replace(/\./g, '').replace(',', '.');
             const parsedValue = parseFloat(valueStr);
             if (!isNaN(parsedValue) && parsedValue > 0) {
               totalValue = parsedValue;
-              console.log('Valor total encontrado no elemento irmão:', totalValue);
+              console.log('Valor encontrado em elemento irmão:', totalValue);
             }
           }
-        } else {
-          // Verificar no texto do elemento pai para contexto maior
+        }
+        
+        // Verificar no elemento pai
+        if (totalValue === 0) {
           match = parentText.match(moneyRegex);
           if (match && (match[1] || match[2])) {
-            const valueStr = (match[1] || match[2]).replace(',', '.');
+            const valueStr = (match[1] || match[2]).replace(/\./g, '').replace(',', '.');
             const parsedValue = parseFloat(valueStr);
             if (!isNaN(parsedValue) && parsedValue > 0) {
               totalValue = parsedValue;
-              console.log('Valor total encontrado no elemento pai:', totalValue);
+              console.log('Valor encontrado no elemento pai:', totalValue);
             }
           }
         }
@@ -468,10 +530,37 @@ function extractDataFromHtml(html: string, url: string, accessKey: string): Fisc
     if (totalValue > 0) break; // Sair do loop se encontrou um valor
   }
   
-  // 2. Nome do Emitente
+  // Se não encontrou valor em padrões específicos, procurar em toda a página
+  if (totalValue === 0) {
+    console.log('Tentando encontrar valor monetário em toda a página...');
+    
+    // Buscar todos os valores monetários na página
+    const pageText = $('body').text();
+    const moneyMatches = pageText.match(/R\$\s*(\d+[,.]\d{2})/g);
+    
+    if (moneyMatches && moneyMatches.length > 0) {
+      // Pegar o maior valor encontrado, assumindo que seja o total
+      let maxValue = 0;
+      
+      moneyMatches.forEach(match => {
+        const valueStr = match.replace(/R\$\s*/, '').replace(/\./g, '').replace(',', '.');
+        const parsedValue = parseFloat(valueStr);
+        if (!isNaN(parsedValue) && parsedValue > maxValue) {
+          maxValue = parsedValue;
+        }
+      });
+      
+      if (maxValue > 0) {
+        totalValue = maxValue;
+        console.log('Valor mais alto encontrado na página:', totalValue);
+      }
+    }
+  }
+  
+  // 2. Nome do Emitente e CNPJ
   const emitentePattterns = [
     'EMITENTE', 'RAZÃO SOCIAL', 'ESTABELECIMENTO', 'EMPRESA',
-    'NOME EMPRESARIAL', 'EMISSOR', 'VENDEDOR'
+    'NOME EMPRESARIAL', 'EMISSOR', 'VENDEDOR', 'CNPJ', 'IDENTIFICAÇÃO DO EMITENTE'
   ];
   
   for (const pattern of emitentePattterns) {
@@ -479,37 +568,59 @@ function extractDataFromHtml(html: string, url: string, accessKey: string): Fisc
     
     if (emitenteElement.length > 0) {
       emitenteElement.each((_, el) => {
-        if (issuerName !== 'ESTABELECIMENTO COMERCIAL') return; // Se já encontrou, não continuar
-        
-        // Verificar elemento, próximo elemento e parentes
-        const nextEl = $(el).next();
-        const parentEl = $(el).parent();
-        
-        // Primeiro verificar o próximo elemento que frequentemente contém o nome
-        if (nextEl.length > 0) {
-          const nameText = nextEl.text().trim();
-          if (nameText && nameText.length > 3 && !/^\d+$/.test(nameText)) {
-            issuerName = nameText;
-            console.log('Nome do emitente encontrado no próximo elemento:', issuerName);
-          }
+        if (issuerName !== 'ESTABELECIMENTO COMERCIAL' && issuerDoc !== 'NÃO INFORMADO') {
+          return; // Se já encontrou todos os dados, não continuar
         }
         
-        // Se não encontrou no próximo, verificar no texto do pai
-        if (issuerName === 'ESTABELECIMENTO COMERCIAL' && parentEl.length > 0) {
-          const parentText = parentEl.text().trim();
-          
-          // Remover o texto do padrão para isolar o nome
-          const nameCandidate = parentText.replace(new RegExp(pattern, 'i'), '').trim();
-          if (nameCandidate && nameCandidate.length > 3 && !/^\d+$/.test(nameCandidate)) {
-            // Limitar a um comprimento razoável
-            issuerName = nameCandidate.substring(0, 100);
-            console.log('Nome do emitente encontrado no elemento pai:', issuerName);
+        const text = $(el).text().trim();
+        const nextText = $(el).next().text().trim();
+        const parentText = $(el).parent().text().trim();
+        const siblingTexts = [];
+        
+        // Coletar textos de irmãos próximos
+        let sibling = $(el).next();
+        for (let i = 0; i < 3 && sibling.length; i++) {
+          siblingTexts.push(sibling.text().trim());
+          sibling = sibling.next();
+        }
+        
+        // Procurar nome do emitente
+        if (issuerName === 'ESTABELECIMENTO COMERCIAL') {
+          // Verificar se estamos lidando com o nome ou cnpj
+          if (pattern.includes('CNPJ') || text.includes('CNPJ')) {
+            // Procurar o CNPJ
+            const cnpjRegex = /\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}|\d{14}/;
+            let match;
+            
+            if ((match = text.match(cnpjRegex)) || 
+                (nextText && (match = nextText.match(cnpjRegex))) || 
+                (parentText && (match = parentText.match(cnpjRegex)))) {
+              issuerDoc = match[0];
+              console.log('CNPJ encontrado:', issuerDoc);
+            }
+          } else {
+            // Tentar encontrar o nome
+            for (const siblingText of siblingTexts) {
+              if (siblingText && siblingText.length > 5 && !siblingText.includes('CNPJ') && !/^\d+$/.test(siblingText)) {
+                // Provavelmente é o nome do emitente
+                issuerName = siblingText.substring(0, 100); // Limitar tamanho
+                console.log('Nome do emitente encontrado:', issuerName);
+                break;
+              }
+            }
+            
+            // Se não encontrou nos irmãos, tentar extrair do texto atual
+            if (issuerName === 'ESTABELECIMENTO COMERCIAL' && parentText.length > pattern.length + 5) {
+              const nameCandidate = parentText.replace(new RegExp(pattern, 'i'), '').trim();
+              if (nameCandidate && nameCandidate.length > 5 && !/^\d+$/.test(nameCandidate)) {
+                issuerName = nameCandidate.substring(0, 100);
+                console.log('Nome do emitente extraído do texto atual:', issuerName);
+              }
+            }
           }
         }
       });
     }
-    
-    if (issuerName !== 'ESTABELECIMENTO COMERCIAL') break;
   }
   
   // 3. Data de Emissão
@@ -520,6 +631,8 @@ function extractDataFromHtml(html: string, url: string, accessKey: string): Fisc
   ];
   
   for (const pattern of dataPatterns) {
+    if (issueDate) break; // Se já encontrou, parar busca
+    
     const dataElement = $('*:contains("' + pattern + '")');
     
     if (dataElement.length > 0) {
@@ -531,59 +644,39 @@ function extractDataFromHtml(html: string, url: string, accessKey: string): Fisc
         const nextText = $(el).next().text().trim();
         const parentText = $(el).parent().text().trim();
         
-        // Regex para data no formato DD/MM/YYYY ou DD-MM-YYYY ou YYYY-MM-DD
-        let dateRegex = /(\d{2}\/\d{2}\/\d{4}|\d{2}-\d{2}-\d{4}|\d{4}-\d{2}-\d{2})/;
-        let match = text.match(dateRegex);
+        // Diferentes padrões de data
+        const dateRegexes = [
+          /(\d{2}\/\d{2}\/\d{4})/,                    // DD/MM/YYYY
+          /(\d{2}-\d{2}-\d{4})/,                     // DD-MM-YYYY
+          /(\d{4}-\d{2}-\d{2})/,                     // YYYY-MM-DD 
+          /(\d{1,2}\/\d{1,2}\/\d{2,4})/,             // D/M/YYYY ou DD/MM/YY
+          /(\d{1,2}\.\d{1,2}\.\d{2,4})/,             // D.M.YYYY ou DD.MM.YY
+          /(\d{1,2}\-\d{1,2}\-\d{2,4})/              // D-M-YYYY ou DD-MM-YY
+        ];
         
-        if (match && match[1]) {
-          issueDate = formatDateString(match[1]);
-          console.log('Data de emissão encontrada no próprio elemento:', issueDate);
-        } else if (nextText) {
-          match = nextText.match(dateRegex);
-          if (match && match[1]) {
-            issueDate = formatDateString(match[1]);
-            console.log('Data de emissão encontrada no elemento irmão:', issueDate);
-          }
-        } else {
-          match = parentText.match(dateRegex);
-          if (match && match[1]) {
-            issueDate = formatDateString(match[1]);
-            console.log('Data de emissão encontrada no elemento pai:', issueDate);
-          }
-        }
+        // Verificar cada regex em cada texto
+        const textsToCheck = [text, nextText, parentText];
         
-        // Se ainda não encontrou, tentar formatos diferentes como DD/MM/YY ou outros formatos
-        if (!issueDate) {
-          // Regex para datas no formato DD/MM/YY
-          const alternativeDateRegex = /(\d{1,2}\/\d{1,2}\/\d{2}|\d{1,2}\.\d{1,2}\.\d{2,4}|\d{1,2}\-\d{1,2}\-\d{2,4})/;
+        for (const currentText of textsToCheck) {
+          if (issueDate) break;
           
-          match = text.match(alternativeDateRegex);
-          if (match && match[1]) {
-            issueDate = formatDateString(match[1]);
-            console.log('Data de emissão alternativa encontrada no próprio elemento:', issueDate);
-          } else if (nextText) {
-            match = nextText.match(alternativeDateRegex);
+          for (const regex of dateRegexes) {
+            const match = currentText.match(regex);
             if (match && match[1]) {
               issueDate = formatDateString(match[1]);
-              console.log('Data de emissão alternativa encontrada no elemento irmão:', issueDate);
-            }
-          } else {
-            match = parentText.match(alternativeDateRegex);
-            if (match && match[1]) {
-              issueDate = formatDateString(match[1]);
-              console.log('Data de emissão alternativa encontrada no elemento pai:', issueDate);
+              console.log('Data encontrada:', match[1], '-> formatada:', issueDate);
+              break;
             }
           }
         }
       });
     }
-    
-    if (issueDate) break;
   }
   
-  // Se não conseguiu extrair a data do HTML, tentar extrair da URL
+  // Se não encontrou data no HTML, tentar extrair da URL
   if (!issueDate) {
     issueDate = extractDateFromUrl(url) || formatCurrentDate();
+    console.log('Data extraída da URL ou usada data atual:', issueDate);
   }
   
   // Retornar os dados extraídos
@@ -595,7 +688,7 @@ function extractDataFromHtml(html: string, url: string, accessKey: string): Fisc
     },
     issuer: {
       name: issuerName,
-      documentNumber: 'NÃO INFORMADO'
+      documentNumber: issuerDoc
     },
     receipt: {
       accessKey: accessKey || 'NÃO IDENTIFICADO',

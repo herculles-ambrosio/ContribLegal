@@ -7,8 +7,8 @@ import Button from './ui/Button';
 import { FaExclamationTriangle, FaTimes, FaSpinner } from 'react-icons/fa';
 import { FiscalReceiptData } from '@/lib/services/fiscalReceiptService';
 import toast from 'react-hot-toast';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
-import { Input } from "./ui/input";
+import { Tabs2 as Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/Tabs";
+import { Input } from "./ui/Input";
 import { fetchReceiptPage } from "@/lib/services/fiscalReceiptService";
 
 // Componente alternativo de ícones para evitar dependência externa

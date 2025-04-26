@@ -1,76 +1,142 @@
-import React, { ReactNode, useState } from 'react';
+'use client';
 
-export type TabItem = {
+import React, { useState, ReactNode } from 'react';
+import { IconType } from 'react-icons';
+
+export interface TabItem {
   id: string;
   label: string;
-  icon?: React.ElementType;
+  icon?: IconType;
   content: ReactNode;
-};
+}
 
-export type TabsProps = {
+interface TabsProps {
   items: TabItem[];
   defaultTabId?: string;
   variant?: 'light' | 'dark';
   className?: string;
-  tabClassName?: string;
   contentClassName?: string;
-};
+}
 
-export default function Tabs({
-  items,
+export default function Tabs({ 
+  items, 
   defaultTabId,
-  variant = 'light',
+  variant = 'light', 
   className = '',
-  tabClassName = '',
   contentClassName = ''
 }: TabsProps) {
-  const [activeTabId, setActiveTabId] = useState<string>(defaultTabId || (items.length > 0 ? items[0].id : ''));
-  
-  const isDark = variant === 'dark';
-  
-  const borderClass = isDark 
-    ? 'border-gray-700' 
-    : 'border-gray-200';
-  
-  const activeTabClass = isDark
-    ? 'border-blue-500 text-blue-400 font-medium'
-    : 'border-blue-500 text-blue-700 font-medium';
-  
-  const inactiveTabClass = isDark
-    ? 'text-gray-400 hover:text-blue-300'
-    : 'text-gray-600 hover:text-blue-500';
+  const [activeTab, setActiveTab] = useState<string>(defaultTabId || (items.length > 0 ? items[0].id : ''));
 
-  const activeContent = items.find(item => item.id === activeTabId)?.content;
-  
+  // Cores baseadas no tema
+  const bgColor = variant === 'dark' ? 'bg-gray-800' : 'bg-white';
+  const tabColor = variant === 'dark' ? 'bg-gray-700' : 'bg-gray-100';
+  const activeTabColor = variant === 'dark' ? 'bg-gray-600' : 'bg-white';
+  const textColor = variant === 'dark' ? 'text-white' : 'text-gray-800';
+  const textColorInactive = variant === 'dark' ? 'text-gray-400' : 'text-gray-600';
+  const borderColor = variant === 'dark' ? 'border-gray-600' : 'border-gray-200';
+
   return (
-    <div className={`w-full ${className}`}>
-      <div className={`flex space-x-4 border-b ${borderClass}`}>
+    <div className={`${className}`}>
+      {/* Cabeçalho das tabs */}
+      <div className={`flex ${bgColor} border-b ${borderColor}`}>
         {items.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = tab.id === activeTabId;
+          const isActive = activeTab === tab.id;
+          const TabIcon = tab.icon;
           
           return (
             <button
               key={tab.id}
-              className={`py-2 px-4 focus:outline-none ${
-                isActive
-                  ? `border-b-2 ${activeTabClass}`
-                  : inactiveTabClass
-              } ${tabClassName}`}
-              onClick={() => setActiveTabId(tab.id)}
+              onClick={() => setActiveTab(tab.id)}
+              className={`
+                relative flex items-center px-4 py-3 focus:outline-none transition-colors
+                ${isActive 
+                  ? `${activeTabColor} ${textColor} font-medium` 
+                  : `${textColorInactive} hover:text-gray-800 hover:bg-gray-50`
+                }
+                ${isActive && variant === 'light' ? 'border-t-2 border-l border-r border-gray-200' : ''}
+              `}
+              style={isActive && variant === 'light' 
+                ? { marginBottom: '-1px', borderTopColor: '#3b82f6', borderTopWidth: '2px' } 
+                : {}
+              }
             >
-              <span className="flex items-center">
-                {Icon && <Icon className="mr-2" />}
-                {tab.label}
-              </span>
+              {TabIcon && <TabIcon className="mr-2 h-4 w-4" />}
+              <span>{tab.label}</span>
             </button>
           );
         })}
       </div>
-      
+
+      {/* Conteúdo da tab ativa */}
       <div className={contentClassName}>
-        {activeContent}
+        {items.find(tab => tab.id === activeTab)?.content || null}
       </div>
+    </div>
+  );
+}
+
+// Para manter a retro-compatibilidade com a interface antiga
+export function Tabs2({
+  children,
+  defaultValue,
+  value,
+  onValueChange,
+  className = ''
+}: {
+  children: ReactNode;
+  defaultValue?: string;
+  value?: string;
+  onValueChange?: (value: string) => void;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      {children}
+    </div>
+  );
+}
+
+export function TabsList({ children, className = '' }: { children: ReactNode; className?: string; }) {
+  return (
+    <div className={`flex ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+export function TabsTrigger({
+  children,
+  value,
+  className = '',
+  onClick
+}: {
+  children: ReactNode;
+  value: string;
+  className?: string;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      className={`py-2 px-4 focus:outline-none ${className}`}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+export function TabsContent({
+  children,
+  value,
+  className = ''
+}: {
+  children: ReactNode;
+  value: string;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      {children}
     </div>
   );
 } 
