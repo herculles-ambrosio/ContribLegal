@@ -5,14 +5,17 @@ import { useRouter } from 'next/navigation';
 import { getUsuarioLogado } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
+import Link from 'next/link';
 
 export default function Dashboard() {
   const router = useRouter();
   const [isChecking, setIsChecking] = useState(true);
+  const [checkingFailed, setCheckingFailed] = useState(false);
 
   useEffect(() => {
     const redirecionarUsuario = async () => {
       try {
+        console.log('Iniciando verificação de usuário no dashboard');
         // Primeiro verificar se há sessão válida
         const { data: { session } } = await supabase.auth.getSession();
         
@@ -41,6 +44,7 @@ export default function Dashboard() {
             console.log('Não foi possível obter dados do usuário, redirecionando para login');
             toast.error('Erro ao verificar suas informações. Por favor, faça login novamente.');
             router.push('/login');
+            setCheckingFailed(true);
             return;
           }
           
@@ -81,7 +85,7 @@ export default function Dashboard() {
       } catch (error) {
         console.error('Erro ao verificar usuário:', error);
         toast.error('Erro ao verificar suas informações');
-        router.push('/');
+        setCheckingFailed(true);
       } finally {
         setIsChecking(false);
       }
@@ -93,12 +97,54 @@ export default function Dashboard() {
   // Exibe um indicador de carregamento enquanto verifica
   return (
     <div className="min-h-screen flex items-center justify-center">
-      {isChecking && (
-        <div className="text-center">
-          <div className="animate-spin h-12 w-12 border-4 border-blue-500 rounded-full border-t-transparent mx-auto mb-4"></div>
-          <p className="text-gray-600">Carregando seu painel...</p>
-        </div>
-      )}
+      <div className="text-center">
+        {isChecking && (
+          <>
+            <div className="animate-spin h-12 w-12 border-4 border-blue-500 rounded-full border-t-transparent mx-auto mb-4"></div>
+            <p className="text-gray-600 mb-6">Carregando seu painel...</p>
+          </>
+        )}
+
+        {checkingFailed && (
+          <div className="mt-8">
+            <p className="text-red-600 mb-4">Houve um problema ao carregar o painel.</p>
+            <div className="p-4 bg-gray-50 rounded-lg">
+              <p className="text-sm text-gray-700 mb-4">Por favor, tente acessar diretamente:</p>
+              <div className="flex flex-col space-y-2">
+                <Link href="/login" className="text-blue-600 hover:underline font-medium px-4 py-2 border border-blue-300 rounded-md">
+                  Fazer Login
+                </Link>
+                <Link href="/contribuinte" className="text-blue-600 hover:underline font-medium px-4 py-2 border border-blue-300 rounded-md">
+                  Área do Contribuinte
+                </Link>
+                <Link href="/admin" className="text-blue-600 hover:underline font-medium px-4 py-2 border border-blue-300 rounded-md">
+                  Área Administrativa
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!isChecking && !checkingFailed && (
+          <div className="mt-8">
+            <p className="text-yellow-600 mb-4">O redirecionamento está demorando mais que o esperado.</p>
+            <div className="p-4 bg-gray-50 rounded-lg">
+              <p className="text-sm text-gray-700 mb-4">Por favor, tente acessar diretamente:</p>
+              <div className="flex flex-col space-y-2">
+                <Link href="/login" className="text-blue-600 hover:underline font-medium px-4 py-2 border border-blue-300 rounded-md">
+                  Fazer Login
+                </Link>
+                <Link href="/contribuinte" className="text-blue-600 hover:underline font-medium px-4 py-2 border border-blue-300 rounded-md">
+                  Área do Contribuinte
+                </Link>
+                <Link href="/admin" className="text-blue-600 hover:underline font-medium px-4 py-2 border border-blue-300 rounded-md">
+                  Área Administrativa
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 } 

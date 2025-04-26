@@ -14,7 +14,9 @@ const nextConfig = {
   
   // Permitir origens específicas em ambiente de desenvolvimento
   experimental: {
-    allowedDevOrigins: ['192.168.1.225']
+    allowedDevOrigins: ['192.168.1.225', 'localhost'],
+    // Desabilitar a geração de etags para evitar problemas de cache
+    disableGenerationETags: true
   },
   
   // Diretório de origem
@@ -24,7 +26,18 @@ const nextConfig = {
   transpilePackages: ['src'],
   
   // Configuração para localizar as pastas app e pages
-  pageExtensions: ['ts', 'tsx', 'js', 'jsx', 'md', 'mdx']
+  pageExtensions: ['ts', 'tsx', 'js', 'jsx', 'md', 'mdx'],
+
+  // Redirecionar a raiz para o dashboard (para garantir compatibilidade)
+  async redirects() {
+    return [
+      {
+        source: '/',
+        destination: '/dashboard',
+        permanent: true,
+      },
+    ];
+  },
 };
 
 module.exports = nextConfig; 
