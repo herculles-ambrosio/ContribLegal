@@ -324,7 +324,6 @@ export default function MeusDocumentos() {
                           </div>
                           <div className="ml-4">
                             <div className="text-sm font-medium text-gray-900">{getTipoDocumentoLabel(documento.tipo)}</div>
-                            <div className="text-sm text-gray-500">#{documento.numero_documento}</div>
                           </div>
                         </div>
                       </td>
