@@ -1,0 +1,86 @@
+# Cursor Rules para Contribuinte Legal
+
+## Padrões de Implementação
+
+1. **Importações de Supabase**
+   - Usar a instância do cliente do Supabase de `/lib/supabase-client.ts` para operações do lado do cliente
+   - Usar funções específicas para acesso administrativo de `/lib/admin-supabase.ts`
+   - Preferir hooks customizados em `/hooks` para operações comuns
+
+2. **Componentes React**
+   - Usar 'use client' apenas para componentes que precisam de interatividade
+   - Nomear componentes com PascalCase
+   - Organizar props em interfaces TypeScript
+   - Utilizar abordagem de componentes funcionais com hooks
+
+3. **Estilização**
+   - Usar TailwindCSS para estilização
+   - Seguir design consistente para formulários e botões
+   - Cores principais: azul para ações primárias, vermelho para alertas/exclusões, verde para confirmações
+   - Manter responsividade para dispositivos móveis
+
+4. **Gerenciamento de Estado**
+   - Preferir Context API para estados compartilhados
+   - Usar useReducer para estados complexos
+   - Manter estados locais para componentes isolados
+   - Utilizar server components quando possível para eliminar estado desnecessário
+
+5. **Tratamento de Erros**
+   - Usar react-hot-toast para notificações de erro
+   - Implementar try/catch em todas as operações assíncronas
+   - Manter mensagens de erro claras e acionáveis
+   - Incluir estratégias de fallback para operações críticas
+
+## Fluxos Críticos
+
+### Acesso Administrativo
+1. Verificar se o usuário tem flag `master = 'S'` na tabela `usuarios`
+2. Tentar funções RPC específicas para admins primeiro
+3. Se falhar, usar a Service Role Key para bypass de RLS
+4. Implementar estratégias de fallback em ordem de preferência
+
+### Gerenciamento de Documentos
+1. Documentos pertencem a usuários específicos (campo `user_id`)
+2. Admins podem visualizar todos os documentos
+3. Usuários regulares só veem seus próprios documentos
+4. Digitalização via QR code gera preview antes de salvar
+
+### Autenticação e Autorização
+1. Login/Registro via Supabase Auth
+2. Dados adicionais do usuário armazenados na tabela `usuarios`
+3. Middleware do Next.js protege rotas administrativas
+4. Usuários novos começam com `master = 'N'` por padrão
+
+## Padrões de Nomenclatura
+
+- **Arquivos**: kebab-case.tsx para componentes, kebab-case.ts para utilitários
+- **Funções**: camelCase para funções e métodos
+- **Componentes**: PascalCase para componentes React
+- **Interfaces/Types**: PascalCase com prefixo I para interfaces (IUser)
+- **Constantes**: UPPER_SNAKE_CASE para constantes globais
+
+## Estrutura de Diretórios
+
+- **/src/app**: Rotas e páginas (App Router)
+- **/src/components**: Componentes reutilizáveis
+- **/src/hooks**: Hooks personalizados
+- **/src/lib**: Utilitários e funções auxiliares
+- **/src/types**: Definições de tipos TypeScript
+- **/src/services**: Serviços para APIs e integrações
+- **/src/db**: Scripts SQL e relacionados ao banco de dados
+
+## Preferências do Usuário
+
+- Feedback visual para todas as operações
+- Performance e responsividade são prioridades
+- Menos cliques para operações comuns
+- Clareza nas mensagens de erro
+- Interface administrativa deve ser completa mas não sobrecarregada
+
+## Desafios Conhecidos
+
+- Políticas RLS do Supabase podem interferir no acesso administrativo
+- Service Role Key no cliente representa risco de segurança
+- Componentes interativos devem ser marcados com 'use client'
+- QR code scanning pode ter problemas em alguns dispositivos
+- Estrutura de dados deve seguir o schema definido no Supabase 
