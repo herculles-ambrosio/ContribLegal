@@ -1461,7 +1461,6 @@ export default function AdminDashboard() {
                           </td>
                           <td className="py-3 px-4">
                             <div className="font-medium">{getTipoDocumentoLabel(doc.tipo)}</div>
-                            <div className="text-sm text-gray-500">#{doc.numero_documento}</div>
                           </td>
                           <td className="py-3 px-4">
                             {new Date(doc.data_emissao).toLocaleDateString('pt-BR')}
